@@ -3,7 +3,9 @@ import random
 import requests
 import json
 
-API_URL = "http://localhost:8000/api/data"
+# Cole aqui o link que o Vercel lhe deu (Não se esqueça do /api/data no fim!)
+# Exemplo: API_URL = "https://dtsd-security-rafael.vercel.app/api/data"
+API_URL = "COLE_AQUI_O_SEU_LINK_DO_VERCEL/api/data"
 
 print("[START] Simulador do ESP32 iniciado...")
 print("A enviar dados falsos para o backend para testar o Dashboard!")
