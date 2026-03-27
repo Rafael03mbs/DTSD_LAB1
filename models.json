@@ -1,0 +1,9 @@
+{
+  "device_id": "string",
+  "temperature": "float",
+  "humidity": "float",
+  "light_level": "float",
+  "distance": "float",
+  "flame_detected": "boolean",
+  "timestamp": "string"
+}
