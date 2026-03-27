@@ -5,7 +5,7 @@ import json
 
 # Cole aqui o link que o Vercel lhe deu (Não se esqueça do /api/data no fim!)
 # Exemplo: API_URL = "https://dtsd-security-rafael.vercel.app/api/data"
-API_URL = "COLE_AQUI_O_SEU_LINK_DO_VERCEL/api/data"
+API_URL = "https://dtsd-lab-1.vercel.app/api/data"
 
 print("[START] Simulador do ESP32 iniciado...")
 print("A enviar dados falsos para o backend para testar o Dashboard!")
@@ -33,12 +33,16 @@ try:
             # Distancia de standby (e.g. parede)
             distance = random.uniform(150.0, 200.0)
         
-        # Chance de incendio / chama! (2% de chance)
+        # Chance de incendio / chama! (Totalmente independente da temperatura)
         flame_detected = random.random() < 0.02
-        if flame_detected or random.random() < 0.01:
-            temperature = random.uniform(55.0, 70.0)
-            flame_detected = True
-            print("[ALERTA] A gerar um alerta simulado de Incendio!")
+        if flame_detected:
+            print("[ALERTA] A gerar um alerta simulado de Chama!")
+
+        # Manter temperatura dentro de limites realistas (18-25 graus)
+        if temperature > 25.0:
+            temperature -= random.uniform(0.5, 1.5)
+        elif temperature < 18.0:
+            temperature += random.uniform(0.5, 1.5)
 
         payload = {
             "device_id": device_id,
