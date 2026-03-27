@@ -56,7 +56,7 @@ try:
             else:
                 print(f"[ERRO] Erro do backend: {res.status_code}")
         except requests.exceptions.ConnectionError:
-            print("[ERRO] Erro de ligacao! O servidor FastAPI esta a correr? (Execute 'python main.py' na pasta backend)")
+            print("[ERRO] Erro de ligacao! O servidor FastAPI esta a correr? (Execute 'uvicorn api.index:app --port 8000')")
 
         time.sleep(3) # Enviar a cada 3 segundos
 except KeyboardInterrupt:
