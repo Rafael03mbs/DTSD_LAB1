@@ -67,6 +67,8 @@ const sensorChart = new Chart(ctx, {
 
 let lastDataCount = 0;
 let lastAlertCount = 0;
+let lastRefreshTime = null;
+let allDataHistory = [];
 
 async function fetchData() {
     try {
@@ -128,34 +130,14 @@ async function fetchData() {
             }
 
             // Update History Table
-            if (data.length !== lastDataCount) {
-                const tableBody = document.getElementById('history-table-body');
-                document.getElementById('history-count').innerText = `${data.length} registos`;
-                tableBody.innerHTML = '';
-                
-                data.forEach(row => {
-                   const tr = document.createElement('tr');
-                   tr.className = "hover:bg-white/5 transition-colors";
-                   
-                   const d = new Date(row.timestamp);
-                   const timeStr = `${d.toLocaleDateString('pt-PT')} ${d.toLocaleTimeString('pt-PT')}`;
-                   
-                   tr.innerHTML = `
-                       <td class="p-4 border-b border-white/5 text-slate-300 font-medium">${timeStr}</td>
-                       <td class="p-4 border-b border-white/5 text-slate-400 max-w-[120px] truncate" title="${row.device_id}">${row.device_id}</td>
-                       <td class="p-4 border-b border-white/5 font-medium ${row.temperature > 50 ? 'text-red-400' : 'text-blue-400'}">${row.temperature.toFixed(1)}°C</td>
-                       <td class="p-4 border-b border-white/5 text-cyan-400">${row.humidity.toFixed(1)}%</td>
-                       <td class="p-4 border-b border-white/5 text-yellow-500">${row.light_level.toFixed(0)}lx</td>
-                       <td class="p-4 border-b border-white/5 ${row.distance < 50 ? 'text-orange-400 font-bold' : 'text-slate-300'}">${row.distance.toFixed(1)}cm</td>
-                       <td class="p-4 border-b border-white/5">
-                            ${row.flame_detected 
-                                ? '<span class="px-2 py-1 bg-red-500/20 text-red-500 rounded-md text-xs font-bold ring-1 ring-red-500/50 blink">FOGO</span>' 
-                                : '<span class="text-green-500/70">Seguro</span>'}
-                       </td>
-                   `;
-                   tableBody.appendChild(tr);
-                });
+            let latestTimestamp = data.length > 0 ? data[0].timestamp : null;
+            if (data.length !== lastDataCount || latestTimestamp !== lastRefreshTime) {
+                allDataHistory = data;
+                renderHistoryTable();
                 lastDataCount = data.length;
+                lastRefreshTime = latestTimestamp;
+            } else {
+                allDataHistory = data;
             }
         }
     } catch (e) {
@@ -247,4 +229,101 @@ document.addEventListener('DOMContentLoaded', () => {
         btnHistory.className = "px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]";
         btnDashboard.className = "px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent";
     });
+
+    // Filter Logic
+    const btnApplyFilters = document.getElementById('btn-apply-filters');
+    const btnClearFilters = document.getElementById('btn-clear-filters');
+    
+    if (btnApplyFilters) {
+        btnApplyFilters.addEventListener('click', () => {
+            renderHistoryTable();
+        });
+    }
+
+    if (btnClearFilters) {
+        btnClearFilters.addEventListener('click', () => {
+            document.getElementById('filter-date').value = '';
+            document.getElementById('filter-time-start').value = '';
+            document.getElementById('filter-time-end').value = '';
+            document.getElementById('filter-sensor').value = '';
+            renderHistoryTable();
+        });
+    }
 });
+
+function renderHistoryTable() {
+    let finalData = allDataHistory;
+    
+    // Apply filters if elements exist
+    const elDate = document.getElementById('filter-date');
+    const elTimeStart = document.getElementById('filter-time-start');
+    const elTimeEnd = document.getElementById('filter-time-end');
+    const elSensor = document.getElementById('filter-sensor');
+    
+    if (elDate && elTimeStart && elTimeEnd && elSensor) {
+        const filterDate = elDate.value;
+        const filterTimeStart = elTimeStart.value;
+        const filterTimeEnd = elTimeEnd.value;
+        const filterSensor = elSensor.value.toLowerCase();
+        
+        if (filterDate || filterTimeStart || filterTimeEnd || filterSensor) {
+            finalData = allDataHistory.filter(row => {
+                const d = new Date(row.timestamp);
+                
+                if (filterDate) {
+                    const rowDate = d.toLocaleDateString('en-CA');
+                    if (rowDate !== filterDate) return false;
+                }
+                
+                if (filterTimeStart) {
+                    const ts = filterTimeStart + ":00";
+                    const rowTime = d.toTimeString().split(' ')[0];
+                    if (rowTime < ts) return false;
+                }
+                
+                if (filterTimeEnd) {
+                    const te = filterTimeEnd + ":59";
+                    const rowTime = d.toTimeString().split(' ')[0];
+                    if (rowTime > te) return false;
+                }
+                
+                if (filterSensor && row.device_id) {
+                    if (!row.device_id.toLowerCase().includes(filterSensor)) return false;
+                }
+                
+                return true;
+            });
+        }
+    }
+
+    const tableBody = document.getElementById('history-table-body');
+    const countEl = document.getElementById('history-count');
+    
+    if (countEl) countEl.innerText = `${finalData.length} registos`;
+    if (!tableBody) return;
+    
+    tableBody.innerHTML = '';
+    
+    finalData.forEach(row => {
+       const tr = document.createElement('tr');
+       tr.className = "hover:bg-white/5 transition-colors";
+       
+       const d = new Date(row.timestamp);
+       const timeStr = `${d.toLocaleDateString('pt-PT')} ${d.toLocaleTimeString('pt-PT')}`;
+       
+       tr.innerHTML = `
+           <td class="p-4 border-b border-white/5 text-slate-300 font-medium">${timeStr}</td>
+           <td class="p-4 border-b border-white/5 text-slate-400 max-w-[120px] truncate" title="${row.device_id}">${row.device_id}</td>
+           <td class="p-4 border-b border-white/5 font-medium ${row.temperature > 50 ? 'text-red-400' : 'text-blue-400'}">${row.temperature.toFixed(1)}°C</td>
+           <td class="p-4 border-b border-white/5 text-cyan-400">${row.humidity.toFixed(1)}%</td>
+           <td class="p-4 border-b border-white/5 text-yellow-500">${row.light_level.toFixed(0)}lx</td>
+           <td class="p-4 border-b border-white/5 ${row.distance < 50 ? 'text-orange-400 font-bold' : 'text-slate-300'}">${row.distance.toFixed(1)}cm</td>
+           <td class="p-4 border-b border-white/5">
+                ${row.flame_detected 
+                    ? '<span class="px-2 py-1 bg-red-500/20 text-red-500 rounded-md text-xs font-bold ring-1 ring-red-500/50 blink">FOGO</span>' 
+                    : '<span class="text-green-500/70">Seguro</span>'}
+           </td>
+       `;
+       tableBody.appendChild(tr);
+    });
+}

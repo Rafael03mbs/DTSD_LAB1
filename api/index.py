@@ -117,11 +117,26 @@ def receive_data(data: SensorData):
 
 @app.get("/api/data")
 def get_recent_data():
-    # Na fase final pode ir ler diretamente do Supabase
+    if USE_SUPABASE:
+        try:
+            response = supabase.table("security_events").select("*").order("timestamp", desc=True).limit(100).execute()
+            return response.data
+        except Exception as e:
+            print(f"Erro a ler do Supabase (data): {e}")
+            return local_data_storage
+    
     return local_data_storage
 
 @app.get("/api/alerts")
 def get_recent_alerts():
+    if USE_SUPABASE:
+        try:
+            response = supabase.table("security_alerts").select("*").order("timestamp", desc=True).limit(50).execute()
+            return response.data
+        except Exception as e:
+            print(f"Erro a ler do Supabase (alerts): {e}")
+            return local_alerts_storage
+            
     return local_alerts_storage
 
 if __name__ == "__main__":
