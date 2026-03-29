@@ -20,25 +20,25 @@ flame_detected = False
 
 try:
     while True:
-        # Variacoes graduais ("Random Walk")
+        # Variações graduais ("Random Walk")
         temperature += random.uniform(-0.5, 0.5)
         humidity += random.uniform(-1.0, 1.0)
-        humidity = max(0, min(100, humidity)) # Limit to 0-100%
+        humidity = max(0, min(100, humidity)) # Limitar a 0-100%
         light += random.uniform(-20, 20)
         
-        # Chance de alguem se aproximar (15% chance, dist < 50cm)
+        # Probabilidade de alguém se aproximar (15% de probabilidade, dist < 50cm)
         if random.random() < 0.15:
             distance = random.uniform(10.0, 45.0)
         else:
-            # Distancia de standby (e.g. parede)
+            # Distância em espera (ex. parede)
             distance = random.uniform(150.0, 200.0)
         
-        # Chance de incendio / chama! (Totalmente independente da temperatura)
+        # Probabilidade de incêndio / chama! (Totalmente independente da temperatura)
         flame_detected = random.random() < 0.02
         if flame_detected:
             print("[ALERTA] A gerar um alerta simulado de Chama!")
 
-        # Manter temperatura dentro de limites realistas (18-25 graus)
+        # Manter temperatura dentro de limites realistas (18 a 25 graus)
         if temperature > 25.0:
             temperature -= random.uniform(0.5, 1.5)
         elif temperature < 18.0:

@@ -7,7 +7,7 @@ import os
 
 app = FastAPI(title="ESP32 Security Monitor API")
 
-# Setup CORS to allow our dashboard to communicate
+# Configurar CORS para permitir a comunicação com o painel
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], # Allow all for local dev
@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# 1. Configuracoes do Supabase (Colocar as chaves reais)
+# 1. Configurações do Supabase (Colocar as chaves reais)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 USE_SUPABASE = True
@@ -33,9 +33,9 @@ if USE_SUPABASE:
         print(f"[ERRO] Erro ao ligar ao Supabase: {e}")
         USE_SUPABASE = False
 else:
-    print("[AVISO] Supabase desativado (Credenciais nao configuradas). Usa o In-Memory fallback para testes locais.")
+    print("[AVISO] Supabase desativado (Credenciais não configuradas). Utiliza recurso em memória para testes locais.")
 
-# Data structure from ESP32
+# Estrutura de dados do ESP32
 class SensorData(BaseModel):
     device_id: str
     temperature: float     # DHT22
@@ -44,7 +44,7 @@ class SensorData(BaseModel):
     distance: float        # HC-SR04
     flame_detected: bool   # Sensor de chama
 
-# In-memory storage for immediate testing before Supabase is fully setup
+# Armazenamento em memória para testes imediatos antes da configuração total do Supabase
 local_data_storage = []
 local_alerts_storage = []
 
@@ -57,12 +57,12 @@ def receive_data(data: SensorData):
     alert_triggered = False
     alert_message = ""
 
-    # 1. Intrusion Rule: Distance < 50cm (someone passed nearby)
+    # 1. Regra de Intrusão: Distância < 50cm (alguém passou perto)
     if data.distance < 50.0:
         alert_triggered = True
         alert_message = f"[ALARME DE INTRUSAO] Movimento/Objeto detetado a {data.distance}cm no dispositivo {data.device_id}"
 
-    # 2. Environmental Rule: Extreme Temperature or Flame
+    # 2. Regra Ambiental: Temperatura Extrema ou Chama
     if data.flame_detected:
         alert_triggered = True
         prefix = " | " if alert_message else ""
@@ -141,5 +141,5 @@ def get_recent_alerts():
 
 if __name__ == "__main__":
     import uvicorn
-    # Corre na porta 8000
+    # Executar na porta 8000
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -32,12 +32,12 @@
 </head>
 <body class="bg-darker text-slate-200 font-sans min-h-screen">
     
-    <!-- Background glowing orbs -->
+    <!-- Orbs brilhantes de fundo -->
     <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
     <div class="fixed bottom-[-20%] right-[-10%] w-[40%] h-[40%] bg-purple-600/20 rounded-full blur-[100px] pointer-events-none"></div>
 
     <div class="container mx-auto px-6 py-8 relative z-10 w-full max-w-7xl">
-        <!-- Header -->
+        <!-- Cabeçalho -->
         <header class="flex justify-between items-center mb-10 glass-panel p-5 rounded-2xl shine">
             <div>
                 <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-accent to-purple-400">
@@ -54,15 +54,15 @@
             </div>
         </header>
 
-        <!-- Tabs -->
+        <!-- Separadores -->
         <nav class="flex space-x-4 mb-6">
             <button id="tab-btn-dashboard" class="px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]">Resumo</button>
             <button id="tab-btn-history" class="px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent">Histórico de Dados</button>
         </nav>
 
-        <!-- View: Dashboard -->
+        <!-- Vista: Resumo -->
         <div id="view-dashboard" class="animate-fadeIn">
-            <!-- Stats Grid -->
+            <!-- Grelha de Estatísticas -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <!-- Temperatura -->
             <div class="glass-panel p-6 rounded-2xl card-hover flex flex-col justify-between relative overflow-hidden group">
@@ -94,7 +94,7 @@
                 </div>
             </div>
 
-            <!-- Distancia -->
+            <!-- Distância -->
             <div class="glass-panel p-6 rounded-2xl card-hover flex flex-col justify-between relative overflow-hidden group" id="card-dist">
                 <div class="absolute inset-0 bg-gradient-to-br from-green-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div class="flex justify-between items-start mb-4">
@@ -124,9 +124,9 @@
             </div>
         </div>
 
-        <!-- Main Content Area -->
+        <!-- Área de Conteúdo Principal -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Graph Area -->
+            <!-- Área do Gráfico -->
             <div class="lg:col-span-2 glass-panel p-6 rounded-2xl relative">
                 <h3 class="text-lg font-semibold mb-6 flex items-center">
                     <svg class="w-5 h-5 mr-2 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
@@ -137,7 +137,7 @@
                 </div>
             </div>
 
-            <!-- Alerts Sidebar -->
+            <!-- Barra Lateral de Alertas -->
             <div class="glass-panel p-6 rounded-2xl flex flex-col relative h-96 lg:h-auto">
                 <div class="flex justify-between items-center mb-6">
                     <h3 class="text-lg font-semibold flex items-center text-danger">
@@ -154,11 +154,11 @@
                 </div>
             </div>
         </div>
-        </div> <!-- End View Dashboard -->
+        </div> <!-- Fim Vista Resumo -->
 
-        <!-- View: History Table -->
+        <!-- Vista: Tabela de Histórico -->
         <div id="view-history" class="hidden animate-fadeIn">
-            <!-- Filter Section -->
+            <!-- Secção de Filtros -->
             <div class="glass-panel p-6 rounded-2xl mb-6 shine relative">
                 <h3 class="text-md font-medium mb-4 text-slate-300">Filtros de Pesquisa</h3>
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -207,16 +207,16 @@
                             </tr>
                         </thead>
                         <tbody id="history-table-body" class="text-sm divide-y divide-white/5">
-                            <!-- Populated by JS -->
+                            <!-- Preenchido via JS -->
                         </tbody>
                     </table>
                 </div>
             </div>
-        </div> <!-- End View History -->
+        </div> <!-- Fim Vista Histórico -->
 
     </div>
 
-    <!-- Scripts -->
+    <!-- Elementos de Script -->
     <script src="app.js"></script>
 </body>
 </html>

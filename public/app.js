@@ -1,6 +1,6 @@
 const API_BASE = "/api";
 
-// Initialize Chart.js
+// Inicializar o Chart.js
 const ctx = document.getElementById('sensorChart').getContext('2d');
 const sensorChart = new Chart(ctx, {
     type: 'line',
@@ -10,7 +10,7 @@ const sensorChart = new Chart(ctx, {
             {
                 label: 'Temperatura (°C)',
                 data: [],
-                borderColor: '#3b82f6', // blue-500
+                borderColor: '#3b82f6', // azul-500
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
                 borderWidth: 2,
                 tension: 0.4,
@@ -20,7 +20,7 @@ const sensorChart = new Chart(ctx, {
             {
                 label: 'Luminosidade (lx)',
                 data: [],
-                borderColor: '#eab308', // yellow-500
+                borderColor: '#eab308', // amarelo-500
                 backgroundColor: 'rgba(234, 179, 8, 0.1)',
                 borderWidth: 2,
                 tension: 0.4,
@@ -76,11 +76,11 @@ async function fetchData() {
         if (!res.ok) return;
         const data = await res.json();
         
-        // Data comes in reverse chronological order from API
-        // We need chronological for the chart
+        // Os dados vêm da API por ordem cronológica inversa
+        // Precisamos da ordem cronológica normal para o gráfico
         const chronoData = [...data].reverse();
         
-        // Update Chart
+        // Atualizar o gráfico
         const labels = chronoData.map(d => new Date(d.timestamp).toLocaleTimeString());
         const temps = chronoData.map(d => d.temperature);
         const lights = chronoData.map(d => d.light_level);
@@ -90,14 +90,14 @@ async function fetchData() {
         sensorChart.data.datasets[1].data = lights;
         sensorChart.update();
 
-        // Update Stat Cards with latest data
+        // Atualizar os Cartões de Estatísticas com os dados mais recentes
         if (data.length > 0) {
-            const latest = data[0]; // Most recent
+            const latest = data[0]; // Dados mais recentes
             document.getElementById('stat-temp').innerText = latest.temperature.toFixed(1);
             document.getElementById('stat-hum').innerText = latest.humidity.toFixed(1);
             document.getElementById('stat-dist').innerText = latest.distance.toFixed(0);
             
-            // Flame Card Update
+            // Atualização do Cartão de Fogo/Chama
             const flameCard = document.getElementById('card-flame');
             const flameIcon = document.getElementById('icon-flame');
             const statFlame = document.getElementById('stat-flame');
@@ -114,7 +114,7 @@ async function fetchData() {
                 flameCard.style.border = "1px solid rgba(255, 255, 255, 0.05)";
             }
             
-            // Distance Card Update color
+            // Atualização da cor do Cartão de Distância
             const distCard = document.getElementById('card-dist');
             const distIcon = document.getElementById('icon-dist');
             const statDist = document.getElementById('stat-dist');
@@ -129,7 +129,7 @@ async function fetchData() {
                 distCard.style.border = "1px solid rgba(255, 255, 255, 0.05)";
             }
 
-            // Update History Table
+            // Atualizar a Tabela de Histórico
             let latestTimestamp = data.length > 0 ? data[0].timestamp : null;
             if (data.length !== lastDataCount || latestTimestamp !== lastRefreshTime) {
                 allDataHistory = data;
@@ -141,7 +141,7 @@ async function fetchData() {
             }
         }
     } catch (e) {
-        console.error("Erro a fletch dados", e);
+        console.error("Erro ao obter dados", e);
     }
 }
 
@@ -160,7 +160,7 @@ async function fetchAlerts() {
         
         badge.innerText = `${alerts.length} Novo${alerts.length !== 1 ? 's' : ''}`;
         
-        // Only re-render if count changed
+        // Apenas re-renderizar se a contagem mudar
         if (alerts.length !== lastAlertCount) {
             container.innerHTML = '';
             alerts.forEach(alert => {
@@ -193,21 +193,21 @@ async function fetchAlerts() {
         }
 
     } catch (e) {
-        console.error("Erro a fetch alertas", e);
+        console.error("Erro ao obter alertas", e);
     }
 }
 
-// Initial fetch
+// Obtenção inicial dos dados
 fetchData();
 fetchAlerts();
 
-// Set interval to poll backend every 2 seconds
+// Definir intervalo para consultar a API a cada 2 segundos
 setInterval(() => {
     fetchData();
     fetchAlerts();
 }, 2000);
 
-// Tab Switching Logic
+// Lógica de Alternância de Separadores
 document.addEventListener('DOMContentLoaded', () => {
     const btnDashboard = document.getElementById('tab-btn-dashboard');
     const btnHistory = document.getElementById('tab-btn-history');
@@ -230,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnDashboard.className = "px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent";
     });
 
-    // Filter Logic
+    // Lógica de Filtros
     const btnApplyFilters = document.getElementById('btn-apply-filters');
     const btnClearFilters = document.getElementById('btn-clear-filters');
     
@@ -254,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function renderHistoryTable() {
     let finalData = allDataHistory;
     
-    // Apply filters if elements exist
+    // Aplicar filtros se os elementos existirem
     const elDate = document.getElementById('filter-date');
     const elTimeStart = document.getElementById('filter-time-start');
     const elTimeEnd = document.getElementById('filter-time-end');

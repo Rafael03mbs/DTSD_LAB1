@@ -1,19 +1,19 @@
 body {
-    background-color: #020617; /* Tailwind darker */
+    background-color: #020617; /* Tailwind mais escuro */
     margin: 0;
     font-family: 'Inter', sans-serif;
 }
 
-/* Glassmorphism Panel */
+/* Painel de Efeito Vidro (Glassmorphism) */
 .glass-panel {
-    background: rgba(15, 23, 42, 0.4); /* Tailwind dark with opacity */
+    background: rgba(15, 23, 42, 0.4); /* Tailwind escuro com opacidade */
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(255, 255, 255, 0.05);
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
 }
 
-/* Hover effects */
+/* Efeitos ao passar com o rato (Hover) */
 .card-hover {
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -23,7 +23,7 @@ body {
     border: 1px solid rgba(56, 189, 248, 0.2);
 }
 
-/* Custom Scrollbar for Alerts */
+/* Barra de deslocamento personalizada para Alertas */
 .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
 }
@@ -38,7 +38,7 @@ body {
     background: rgba(255, 255, 255, 0.2);
 }
 
-/* Shine effect on Header */
+/* Efeito de brilho no Cabeçalho */
 .shine {
     position: relative;
     overflow: hidden;
