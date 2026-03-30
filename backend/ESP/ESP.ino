@@ -93,6 +93,24 @@ void loop() {
   float humidade = dht.readHumidity();
   float temperatura = dht.readTemperature(); 
 
+  // Contador para ignorar as primeiras medições ao arrancar (cooldown)
+  static int medicoesIgnoradas = 0;
+  if (medicoesIgnoradas < 3) {
+    medicoesIgnoradas++;
+    Serial.print("A ignorar medição inicial (cooldown) ");
+    Serial.print(medicoesIgnoradas);
+    Serial.println("/3...");
+    delay(3000); 
+    return;
+  }
+
+  // Filtro de segurança apenas para falhas reais do sensor (valores NaN)
+  if (isnan(temperatura) || isnan(humidade)) {
+    Serial.println("Aviso: Falha de leitura (NaN) no sensor DHT11. A tentar de novo...");
+    delay(2000); 
+    return; 
+  }
+
   // ==========================================
   // 4. ESCREVER NO ECRÃ LCD
   // ==========================================

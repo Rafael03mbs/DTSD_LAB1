@@ -68,14 +68,14 @@ def receive_data(data: SensorData):
         prefix = " | " if alert_message else ""
         alert_message += f"{prefix}[INCENDIO] Chama detetada pelo Sensor!"
         
-    if data.temperature > 50.0:
+    if data.temperature > 28.0:
         alert_triggered = True
         prefix = " | " if alert_message else ""
-        alert_message += f"{prefix}[INCENDIO] Temperatura anormal ({data.temperature} C)"
+        alert_message += f"{prefix}Temperatura muito elevada ({data.temperature} C)"
     elif data.temperature < 0.0:
         alert_triggered = True
         prefix = " | " if alert_message else ""
-        alert_message += f"{prefix}[FRIO EXTREMO] Temperatura perigosamente baixa ({data.temperature} C)"
+        alert_message += f"{prefix}[FRIO EXTREMO] Temperatura muito baixa ({data.temperature} C)"
 
     # Adicionar alerta à base local se existir
     if alert_triggered:

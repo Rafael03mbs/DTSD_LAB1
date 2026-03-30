@@ -66,10 +66,11 @@ const sensorChart = new Chart(ctx, {
 });
 
 let lastDataCount = 0;
-let lastAlertCount = 0;
+let lastAlertTimestamp = null;
 let lastRefreshTime = null;
 let lastDataReceivedTimestamp = 0;
 let allDataHistory = [];
+let hideAlertsBefore = 0; // Timestamp local a partir do qual mostramos alertas
 
 function updateConnectionStatus(isOnline) {
     const statusText = document.getElementById('status-text');
@@ -181,42 +182,56 @@ async function fetchAlerts() {
         const container = document.getElementById('alerts-container');
         const badge = document.getElementById('alert-badge');
         
-        if (alerts.length > 0) {
+        // Filtrar alertas criados ANTES de carregarmos no botão Limpar (se hideAlertsBefore estiver definido)
+        const visibleAlerts = alerts.filter(a => new Date(a.timestamp).getTime() > hideAlertsBefore);
+        
+        if (visibleAlerts.length > 0) {
             document.getElementById('no-alerts-msg').style.display = 'none';
         }
         
-        badge.innerText = `${alerts.length} Novo${alerts.length !== 1 ? 's' : ''}`;
+        badge.innerText = `${visibleAlerts.length} Novo${visibleAlerts.length !== 1 ? 's' : ''}`;
         
-        // Apenas re-renderizar se a contagem mudar
-        if (alerts.length !== lastAlertCount) {
+        const currentLatestAlert = visibleAlerts.length > 0 ? visibleAlerts[0].timestamp : null;
+        
+        // Apenas re-renderizar se houver um alerta mais recente do que o gravado ou se mudou de quantidade (ex: zero)
+        if (currentLatestAlert !== lastAlertTimestamp || visibleAlerts.length === 0) {
             container.innerHTML = '';
-            alerts.forEach(alert => {
-                const isFire = alert.message.includes("INCENDIO");
-                const iconColor = isFire ? "text-orange-500 bg-orange-500/20" : "text-red-500 bg-red-500/20";
-                const borderClass = isFire ? "border-orange-500/30" : "border-red-500/30";
-                const iconPath = isFire 
-                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"></path>' 
-                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>';
-
-                const dateObj = new Date(alert.timestamp);
-                const timeStr = dateObj.toLocaleTimeString();
-
-                const el = document.createElement('div');
-                el.className = `p-4 rounded-xl border ${borderClass} bg-dark/50 flex items-start space-x-3 animation-slideIn`;
-                el.innerHTML = `
-                    <div class="p-2 rounded-lg ${iconColor} shrink-0 mt-1">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            ${iconPath}
-                        </svg>
-                    </div>
-                    <div>
-                        <div class="text-sm font-semibold text-slate-200">${alert.message}</div>
-                        <div class="text-xs text-slate-400 mt-1">${timeStr} • ${alert.device_id}</div>
+            
+            if (visibleAlerts.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-slate-500 py-10" id="no-alerts-msg">
+                        Nenhuma intrusão detetada. Sistema seguro.
                     </div>
                 `;
-                container.appendChild(el);
-            });
-            lastAlertCount = alerts.length;
+            } else {
+                visibleAlerts.forEach(alert => {
+                    const isFire = alert.message.includes("INCENDIO");
+                    const iconColor = isFire ? "text-orange-500 bg-orange-500/20" : "text-red-500 bg-red-500/20";
+                    const borderClass = isFire ? "border-orange-500/30" : "border-red-500/30";
+                    const iconPath = isFire 
+                        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"></path>' 
+                        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>';
+
+                    const dateObj = new Date(alert.timestamp);
+                    const timeStr = dateObj.toLocaleTimeString();
+
+                    const el = document.createElement('div');
+                    el.className = `p-4 rounded-xl border ${borderClass} bg-dark/50 flex items-start space-x-3 animation-slideIn`;
+                    el.innerHTML = `
+                        <div class="p-2 rounded-lg ${iconColor} shrink-0 mt-1">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                ${iconPath}
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="text-sm font-semibold text-slate-200">${alert.message}</div>
+                            <div class="text-xs text-slate-400 mt-1">${timeStr} • ${alert.device_id}</div>
+                        </div>
+                    `;
+                    container.appendChild(el);
+                });
+            }
+            lastAlertTimestamp = currentLatestAlert;
         }
 
     } catch (e) {
@@ -282,6 +297,17 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('filter-time-end').value = '';
             document.getElementById('filter-sensor').value = '';
             renderHistoryTable();
+        });
+    }
+
+    // Lógica para o botão de limpar alertas (LIMPEZA LOCAL/FRONTEND)
+    const btnClearAlerts = document.getElementById('btn-clear-alerts');
+    if (btnClearAlerts) {
+        btnClearAlerts.addEventListener('click', () => {
+            // Apenas atualiza o marcador na UI para esconder tudo a partir desta data, não apaga da BD
+            hideAlertsBefore = Date.now();
+            lastAlertTimestamp = null; // Força re-render
+            fetchAlerts(); // Faz novo render e filtra localmente
         });
     }
 });
