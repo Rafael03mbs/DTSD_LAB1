@@ -68,12 +68,38 @@ const sensorChart = new Chart(ctx, {
 let lastDataCount = 0;
 let lastAlertCount = 0;
 let lastRefreshTime = null;
+let lastDataReceivedTimestamp = 0;
 let allDataHistory = [];
+
+function updateConnectionStatus(isOnline) {
+    const statusText = document.getElementById('status-text');
+    const statusDot = document.getElementById('status-dot');
+    const statusPing = document.getElementById('status-ping');
+    
+    if (!statusText || !statusDot || !statusPing) return;
+
+    if (isOnline) {
+        statusText.innerText = "Sistema Online";
+        statusText.className = "text-sm font-medium text-slate-300";
+        statusDot.className = "relative inline-flex rounded-full h-3 w-3 bg-green-500";
+        statusPing.classList.replace('bg-slate-400', 'bg-green-400');
+        statusPing.classList.remove('hidden');
+    } else {
+        statusText.innerText = "Sistema Offline";
+        statusText.className = "text-sm font-medium text-slate-500";
+        statusDot.className = "relative inline-flex rounded-full h-3 w-3 bg-slate-500";
+        statusPing.classList.replace('bg-green-400', 'bg-slate-400');
+        statusPing.classList.add('hidden');
+    }
+}
 
 async function fetchData() {
     try {
         const res = await fetch(`${API_BASE}/data`);
-        if (!res.ok) return;
+        if (!res.ok) {
+            updateConnectionStatus(false);
+            return;
+        }
         const data = await res.json();
         
         // Os dados vêm da API por ordem cronológica inversa
@@ -132,6 +158,7 @@ async function fetchData() {
             // Atualizar a Tabela de Histórico
             let latestTimestamp = data.length > 0 ? data[0].timestamp : null;
             if (data.length !== lastDataCount || latestTimestamp !== lastRefreshTime) {
+                lastDataReceivedTimestamp = Date.now();
                 allDataHistory = data;
                 renderHistoryTable();
                 lastDataCount = data.length;
@@ -205,6 +232,14 @@ fetchAlerts();
 setInterval(() => {
     fetchData();
     fetchAlerts();
+    
+    // Verificar se se passaram mais de 5 segundos sem novos dados (timeout)
+    if (lastDataReceivedTimestamp > 0) {
+        const isOnline = (Date.now() - lastDataReceivedTimestamp) < 5000;
+        updateConnectionStatus(isOnline);
+    } else {
+        updateConnectionStatus(false);
+    }
 }, 2000);
 
 // Lógica de Alternância de Separadores
