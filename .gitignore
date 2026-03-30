@@ -28,3 +28,6 @@ wheels/
 # Ignore SQLite DB if using local test DB
 *.db
 *.sqlite3
+
+# Arduino / ESP32 Secrets
+secrets.h
