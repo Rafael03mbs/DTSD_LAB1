@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 app = FastAPI(title="ESP32 Security Monitor API")
@@ -50,7 +50,7 @@ local_alerts_storage = []
 
 @app.post("/api/data")
 def receive_data(data: SensorData):
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     data_dict = data.dict()
     data_dict["timestamp"] = timestamp
 

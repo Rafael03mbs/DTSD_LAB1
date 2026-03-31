@@ -96,7 +96,7 @@ function updateConnectionStatus(isOnline) {
 
 async function fetchData() {
     try {
-        const res = await fetch(`${API_BASE}/data`);
+        const res = await fetch(`${API_BASE}/data?_=${Date.now()}`);
         if (!res.ok) {
             updateConnectionStatus(false);
             return;
@@ -175,7 +175,7 @@ async function fetchData() {
 
 async function fetchAlerts() {
     try {
-        const res = await fetch(`${API_BASE}/alerts`);
+        const res = await fetch(`${API_BASE}/alerts?_=${Date.now()}`);
         if (!res.ok) return;
         const alerts = await res.json();
         
@@ -185,17 +185,19 @@ async function fetchAlerts() {
         // Filtrar alertas criados ANTES de carregarmos no botão Limpar (se hideAlertsBefore estiver definido)
         const visibleAlerts = alerts.filter(a => new Date(a.timestamp).getTime() > hideAlertsBefore);
         
-        if (visibleAlerts.length > 0) {
+        if (visibleAlerts.length > 0 && document.getElementById('no-alerts-msg')) {
             document.getElementById('no-alerts-msg').style.display = 'none';
         }
         
         badge.innerText = `${visibleAlerts.length} Novo${visibleAlerts.length !== 1 ? 's' : ''}`;
         
         const currentLatestAlert = visibleAlerts.length > 0 ? visibleAlerts[0].timestamp : null;
+        const previousAlertsCount = window.lastAlertsCount || 0;
         
-        // Apenas re-renderizar se houver um alerta mais recente do que o gravado ou se mudou de quantidade (ex: zero)
-        if (currentLatestAlert !== lastAlertTimestamp || visibleAlerts.length === 0) {
+        // Apenas re-renderizar se houver um alerta mais recente do que o gravado ou se mudou de quantidade
+        if (currentLatestAlert !== lastAlertTimestamp || visibleAlerts.length !== previousAlertsCount) {
             container.innerHTML = '';
+            window.lastAlertsCount = visibleAlerts.length;
             
             if (visibleAlerts.length === 0) {
                 container.innerHTML = `
@@ -305,8 +307,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnClearAlerts) {
         btnClearAlerts.addEventListener('click', () => {
             // Apenas atualiza o marcador na UI para esconder tudo a partir desta data, não apaga da BD
-            hideAlertsBefore = Date.now();
+            // Usamos o timestamp do último alerta para evitar falhas de fuso horário caso o backend não emita em UTC
+            if (lastAlertTimestamp) {
+                hideAlertsBefore = new Date(lastAlertTimestamp).getTime() + 1000;
+            } else {
+                hideAlertsBefore = Date.now();
+            }
             lastAlertTimestamp = null; // Força re-render
+            window.lastAlertsCount = 0;
             fetchAlerts(); // Faz novo render e filtra localmente
         });
     }
