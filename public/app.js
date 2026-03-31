@@ -307,15 +307,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnClearAlerts) {
         btnClearAlerts.addEventListener('click', () => {
             // Apenas atualiza o marcador na UI para esconder tudo a partir desta data, não apaga da BD
-            // Usamos o timestamp do último alerta para evitar falhas de fuso horário caso o backend não emita em UTC
             if (lastAlertTimestamp) {
                 hideAlertsBefore = new Date(lastAlertTimestamp).getTime() + 1000;
             } else {
                 hideAlertsBefore = Date.now();
             }
-            lastAlertTimestamp = null; // Força re-render
+            
+            lastAlertTimestamp = null;
             window.lastAlertsCount = 0;
-            fetchAlerts(); // Faz novo render e filtra localmente
+            
+            // Limpar a interface imediatamente para evitar esperas!
+            const container = document.getElementById('alerts-container');
+            if (container) {
+                container.innerHTML = `
+                    <div class="text-center text-slate-500 py-10" id="no-alerts-msg">
+                        Nenhuma intrusão detetada. Sistema seguro.
+                    </div>
+                `;
+            }
+            const badge = document.getElementById('alert-badge');
+            if (badge) badge.innerText = '0 Novos';
         });
     }
 });
