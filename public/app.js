@@ -20,7 +20,10 @@ function showLoginScreen() {
 }
 
 /** Esconde o ecrã de login e mostra a app principal. */
+let currentUser = null; // Utilizador atual (global)
+
 function showApp(user) {
+    currentUser = user; // Guardar utilizador globalmente
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('app-main').classList.remove('hidden');
 
@@ -132,6 +135,96 @@ document.getElementById('btn-google-login')?.addEventListener('click', loginWith
 document.getElementById('btn-logout')?.addEventListener('click', logout);
 
 // ============================================================
+// MODAL: REGISTO DE DISPOSITIVO
+// ============================================================
+
+/** Abre o modal de registo de dispositivo. */
+function openDeviceModal() {
+    document.getElementById('modal-device').classList.remove('hidden');
+    const statusEl = document.getElementById('device-status');
+    if (statusEl) { statusEl.classList.add('hidden'); statusEl.innerText = ''; }
+}
+
+/** Fecha o modal de registo de dispositivo. */
+function closeDeviceModal() {
+    document.getElementById('modal-device').classList.add('hidden');
+}
+
+/** Guarda a associação device_id <-> user no backend. */
+async function saveDeviceRegistration() {
+    const deviceIdInput = document.getElementById('input-device-id');
+    const statusEl = document.getElementById('device-status');
+    const btn = document.getElementById('btn-save-device');
+
+    const deviceId = deviceIdInput?.value.trim();
+    if (!deviceId) {
+        if (statusEl) {
+            statusEl.innerText = '❌ Introduz um Device ID válido.';
+            statusEl.className = 'text-xs mb-4 text-red-400';
+            statusEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    // Obter o token JWT da sessão atual
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) {
+        if (statusEl) {
+            statusEl.innerText = '❌ Não estás autenticado.';
+            statusEl.className = 'text-xs mb-4 text-red-400';
+            statusEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    if (btn) { btn.disabled = true; btn.innerText = 'A guardar...'; }
+
+    try {
+        const res = await fetch('/api/register-device', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ device_id: deviceId })
+        });
+
+        if (res.ok) {
+            if (statusEl) {
+                statusEl.innerText = `✅ Dispositivo "${deviceId}" associado com sucesso!`;
+                statusEl.className = 'text-xs mb-4 text-green-400';
+                statusEl.classList.remove('hidden');
+            }
+            setTimeout(closeDeviceModal, 2000);
+        } else {
+            const err = await res.json();
+            if (statusEl) {
+                statusEl.innerText = `❌ Erro: ${err.detail || 'Falha ao guardar.'}`;
+                statusEl.className = 'text-xs mb-4 text-red-400';
+                statusEl.classList.remove('hidden');
+            }
+        }
+    } catch (e) {
+        if (statusEl) {
+            statusEl.innerText = '❌ Erro de ligação ao servidor.';
+            statusEl.className = 'text-xs mb-4 text-red-400';
+            statusEl.classList.remove('hidden');
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = 'Guardar Associação'; }
+    }
+}
+
+document.getElementById('btn-register-device')?.addEventListener('click', openDeviceModal);
+document.getElementById('btn-close-device-modal')?.addEventListener('click', closeDeviceModal);
+document.getElementById('btn-save-device')?.addEventListener('click', saveDeviceRegistration);
+
+// Fechar modal ao clicar fora
+document.getElementById('modal-device')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modal-device')) closeDeviceModal();
+});
+
+// ============================================================
 // FUNÇÃO PRINCIPAL DO DASHBOARD (chamada após login)
 // ============================================================
 function initDashboard() {
@@ -237,13 +330,21 @@ function updateConnectionStatus(isOnline) {
 
 async function fetchData() {
     try {
-        const res = await fetch(`${API_BASE}/data?_=${Date.now()}`);
-        if (!res.ok) {
+        if (!currentUser) return;
+
+        // Usar Supabase JS diretamente — o RLS filtra automaticamente pelo user_id do utilizador atual
+        const { data, error } = await supabaseClient
+            .from('security_events')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .limit(100);
+
+        if (error) {
+            console.error('Erro Supabase (data):', error.message);
             updateConnectionStatus(false);
             return;
         }
-        const data = await res.json();
-        
+
         // Os dados vêm da API por ordem cronológica inversa
         // Precisamos da ordem cronológica normal para o gráfico
         const chronoData = [...data].reverse();
@@ -321,14 +422,24 @@ async function fetchData() {
 
 async function fetchAlerts() {
     try {
-        const res = await fetch(`${API_BASE}/alerts?_=${Date.now()}`);
-        if (!res.ok) return;
-        const alerts = await res.json();
+        if (!currentUser) return;
+
+        // Usar Supabase JS diretamente — o RLS filtra automaticamente pelo user_id do utilizador atual
+        const { data: alerts, error } = await supabaseClient
+            .from('security_alerts')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .limit(50);
+
+        if (error) {
+            console.error('Erro Supabase (alerts):', error.message);
+            return;
+        }
         
         const container = document.getElementById('alerts-container');
         const badge = document.getElementById('alert-badge');
         
-        // Filtrar alertas criados ANTES de carregarmos no botão Limpar (se hideAlertsBefore estiver definido)
+        // Filtrar alertas criados ANTES de carregarmos no botão Limpar
         const visibleAlerts = alerts.filter(a => new Date(a.timestamp).getTime() > hideAlertsBefore);
         
         if (visibleAlerts.length > 0 && document.getElementById('no-alerts-msg')) {
@@ -340,7 +451,6 @@ async function fetchAlerts() {
         const currentLatestAlert = visibleAlerts.length > 0 ? visibleAlerts[0].timestamp : null;
         const previousAlertsCount = window.lastAlertsCount || 0;
         
-        // Apenas re-renderizar se houver um alerta mais recente do que o gravado ou se mudou de quantidade
         if (currentLatestAlert !== lastAlertTimestamp || visibleAlerts.length !== previousAlertsCount) {
             container.innerHTML = '';
             window.lastAlertsCount = visibleAlerts.length;

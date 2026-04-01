@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
 from datetime import datetime, timezone
+from typing import Optional
 import os
 
 app = FastAPI(title="ESP32 Security Monitor API")
@@ -44,15 +45,47 @@ class SensorData(BaseModel):
     distance: float        # HC-SR04
     flame_detected: bool   # Sensor de chama
 
+# Modelo para registo de dispositivo
+class DeviceRegister(BaseModel):
+    device_id: str
+
 # Armazenamento em memória para testes imediatos antes da configuração total do Supabase
 local_data_storage = []
 local_alerts_storage = []
+
+def get_user_id_by_device(device_id: str) -> Optional[str]:
+    """Obtém o user_id associado a um device_id da tabela user_devices."""
+    if not USE_SUPABASE:
+        return None
+    try:
+        resp = supabase.table("user_devices").select("user_id").eq("device_id", device_id).single().execute()
+        if resp.data:
+            return resp.data.get("user_id")
+    except Exception:
+        pass
+    return None
+
+def get_user_from_token(authorization: Optional[str]) -> Optional[dict]:
+    """Valida o token JWT do Supabase e retorna o utilizador."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1]
+    try:
+        resp = supabase.auth.get_user(token)
+        return resp.user
+    except Exception:
+        return None
 
 @app.post("/api/data")
 def receive_data(data: SensorData):
     timestamp = datetime.now(timezone.utc).isoformat()
     data_dict = data.dict()
     data_dict["timestamp"] = timestamp
+
+    # Associar o user_id ao device_id (para isolação de dados por utilizador)
+    user_id = get_user_id_by_device(data.device_id)
+    if user_id:
+        data_dict["user_id"] = user_id
 
     alert_triggered = False
     alert_message = ""
@@ -105,15 +138,39 @@ def receive_data(data: SensorData):
         # Se houver alerta, guarda na tabela 'security_alerts'
         if alert_triggered:
             try:
-                supabase.table("security_alerts").insert({
+                alert_dict = {
                     "timestamp": timestamp,
                     "message": alert_message,
                     "device_id": data.device_id
-                }).execute()
+                }
+                if user_id:
+                    alert_dict["user_id"] = user_id
+                supabase.table("security_alerts").insert(alert_dict).execute()
             except Exception as e:
                 print(f"Erro a inserir alerta no Supabase: {e}")
 
     return {"status": "success", "alert_triggered": alert_triggered, "alert_message": alert_message}
+
+
+@app.post("/api/register-device")
+def register_device(body: DeviceRegister, authorization: Optional[str] = Header(None)):
+    """Associa um device_id ao utilizador autenticado."""
+    user = get_user_from_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+
+    if not USE_SUPABASE:
+        raise HTTPException(status_code=503, detail="Supabase não disponível")
+
+    try:
+        # Upsert: atualiza se já existe, cria se não
+        supabase.table("user_devices").upsert({
+            "user_id": str(user.id),
+            "device_id": body.device_id
+        }).execute()
+        return {"status": "ok", "user_id": str(user.id), "device_id": body.device_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/data")
 def get_recent_data():
