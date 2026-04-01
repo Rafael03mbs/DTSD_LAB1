@@ -417,15 +417,36 @@ function renderHistoryTable() {
 // ASSISTENTE DE CONFORTO (Open-Meteo)
 // ==========================================
 let currentOutdoorWeather = null;
+let userLat = 38.7167; // Coordenadas padrão: Lisboa
+let userLon = -9.1333; // Coordenadas padrão: Lisboa
+
+function initWeatherWithLocation() {
+    if ("geolocation" in navigator) {
+        const recEl = document.getElementById('weather-recommendation');
+        if (recEl) recEl.innerText = "A pedir a tua localização ao browser para recomendações exatas...";
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                userLat = position.coords.latitude;
+                userLon = position.coords.longitude;
+                console.log("Localização precisa cedida:", userLat, userLon);
+                fetchOutdoorWeather();
+            },
+            (error) => {
+                console.warn("Localização negada ou com erro. A voltar para Lisboa.", error);
+                fetchOutdoorWeather();
+            },
+            { timeout: 10000 }
+        );
+    } else {
+        fetchOutdoorWeather();
+    }
+}
 
 async function fetchOutdoorWeather() {
     try {
-        // Coordenadas padrão: Lisboa (Podes mudar depois para onde vives)
-        const lat = 38.7167;
-        const lon = -9.1333;
-        
-        // Open-Meteo é grátis, hiper-rápido e não requer API key!
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,rain&timezone=Europe%2FLisbon`;
+        // Open-Meteo é grátis e o 'timezone=auto' descobre o teu fuso horário automaticamente pelas coordenadas dadas!
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${userLat}&longitude=${userLon}&current=temperature_2m,relative_humidity_2m,rain&timezone=auto`;
         
         const res = await fetch(url);
         if (!res.ok) return;
@@ -483,7 +504,6 @@ function updateRecommendation() {
     }
 }
 
-// Inicializar a meteorologia e definir um loop de 5 minutos
-// (Mudar meteorologia a cada 2s não faz sentido, a cada 5m é o ideal para a API)
-fetchOutdoorWeather();
+// Inicializar a meteorologia pedindo permissões primeiro e definir um loop de 5 minutos de refresco
+initWeatherWithLocation();
 setInterval(fetchOutdoorWeather, 300000);
