@@ -100,7 +100,12 @@ async function loginWithGoogle() {
 /** Termina a sessão do utilizador. */
 async function logout() {
     await supabaseClient.auth.signOut();
+
+    // Resetar o flag para que o dashboard seja reiniciado no próximo login
+    window._dashboardInitialized = false;
+
     showLoginScreen();
+
     // Limpar o perfil
     const nameEl = document.getElementById('user-name');
     const avatarEl = document.getElementById('user-avatar');
@@ -401,76 +406,73 @@ setInterval(() => {
 }, 2000);
 
 // Lógica de Alternância de Separadores
-document.addEventListener('DOMContentLoaded', () => {
-    const btnDashboard = document.getElementById('tab-btn-dashboard');
-    const btnHistory = document.getElementById('tab-btn-history');
-    const viewDashboard = document.getElementById('view-dashboard');
-    const viewHistory = document.getElementById('view-history');
+// NOTA: Executado diretamente (não precisa de DOMContentLoaded pois o initDashboard()
+// só é chamado APÓS o login, quando o DOM já está 100% carregado)
+const btnDashboard = document.getElementById('tab-btn-dashboard');
+const btnHistory   = document.getElementById('tab-btn-history');
+const viewDashboard = document.getElementById('view-dashboard');
+const viewHistory   = document.getElementById('view-history');
 
+if (btnDashboard) {
     btnDashboard.addEventListener('click', () => {
         viewDashboard.classList.remove('hidden');
         viewHistory.classList.add('hidden');
-        
         btnDashboard.className = "px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]";
-        btnHistory.className = "px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent";
+        btnHistory.className   = "px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent";
     });
+}
 
+if (btnHistory) {
     btnHistory.addEventListener('click', () => {
         viewHistory.classList.remove('hidden');
         viewDashboard.classList.add('hidden');
-        
-        btnHistory.className = "px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]";
+        btnHistory.className   = "px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]";
         btnDashboard.className = "px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent";
     });
+}
 
-    // Lógica de Filtros
-    const btnApplyFilters = document.getElementById('btn-apply-filters');
-    const btnClearFilters = document.getElementById('btn-clear-filters');
-    
-    if (btnApplyFilters) {
-        btnApplyFilters.addEventListener('click', () => {
-            renderHistoryTable();
-        });
-    }
+// Lógica de Filtros
+const btnApplyFilters = document.getElementById('btn-apply-filters');
+const btnClearFilters = document.getElementById('btn-clear-filters');
 
-    if (btnClearFilters) {
-        btnClearFilters.addEventListener('click', () => {
-            document.getElementById('filter-date').value = '';
-            document.getElementById('filter-time-start').value = '';
-            document.getElementById('filter-time-end').value = '';
-            document.getElementById('filter-sensor').value = '';
-            renderHistoryTable();
-        });
-    }
+if (btnApplyFilters) {
+    btnApplyFilters.addEventListener('click', () => renderHistoryTable());
+}
 
-    // Lógica para o botão de limpar alertas (LIMPEZA LOCAL/FRONTEND)
-    const btnClearAlerts = document.getElementById('btn-clear-alerts');
-    if (btnClearAlerts) {
-        btnClearAlerts.addEventListener('click', () => {
-            // Apenas atualiza o marcador na UI para esconder tudo a partir desta data, não apaga da BD
-            if (lastAlertTimestamp) {
-                hideAlertsBefore = new Date(lastAlertTimestamp).getTime() + 1000;
-            } else {
-                hideAlertsBefore = Date.now();
-            }
-            
-            lastAlertTimestamp = null;
-            window.lastAlertsCount = 0;
-            
-            // Limpar a interface imediatamente para evitar esperas!
-            const container = document.getElementById('alerts-container');
-            if (container) {
-                container.innerHTML = `
-                    <div class="text-center text-slate-500 py-10" id="no-alerts-msg">
-                        Nenhuma intrusão detetada. Sistema seguro.
-                    </div>
-                `;
-            }
-            const badge = document.getElementById('alert-badge');
-            if (badge) badge.innerText = '0 Novos';
-        });
-    }
-});
+if (btnClearFilters) {
+    btnClearFilters.addEventListener('click', () => {
+        document.getElementById('filter-date').value = '';
+        document.getElementById('filter-time-start').value = '';
+        document.getElementById('filter-time-end').value = '';
+        document.getElementById('filter-sensor').value = '';
+        renderHistoryTable();
+    });
+}
+
+// Lógica para o botão de limpar alertas
+const btnClearAlerts = document.getElementById('btn-clear-alerts');
+if (btnClearAlerts) {
+    btnClearAlerts.addEventListener('click', () => {
+        if (lastAlertTimestamp) {
+            hideAlertsBefore = new Date(lastAlertTimestamp).getTime() + 1000;
+        } else {
+            hideAlertsBefore = Date.now();
+        }
+        lastAlertTimestamp = null;
+        window.lastAlertsCount = 0;
+
+        const container = document.getElementById('alerts-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="text-center text-slate-500 py-10" id="no-alerts-msg">
+                    Nenhuma intrusão detetada. Sistema seguro.
+                </div>
+            `;
+        }
+        const badge = document.getElementById('alert-badge');
+        if (badge) badge.innerText = '0 Novos';
+    });
+}
 
 function renderHistoryTable() {
     let finalData = allDataHistory;
