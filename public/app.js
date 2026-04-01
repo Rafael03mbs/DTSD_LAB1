@@ -76,7 +76,12 @@ async function loginWithGoogle() {
         options: {
             // Usar apenas a origem (sem query params/hash) para evitar loops
             // no segundo login causados por parâmetros OAuth residuais no URL
-            redirectTo: window.location.origin
+            redirectTo: window.location.origin + window.location.pathname,
+            queryParams: {
+                // Forçar o Google a mostrar o seletor de contas em vez de
+                // auto-selecionar a conta anterior (evita loop de re-login)
+                prompt: 'select_account'
+            }
         }
     });
 
@@ -103,10 +108,18 @@ async function loginWithGoogle() {
 
 /** Termina a sessão do utilizador. */
 async function logout() {
-    await supabaseClient.auth.signOut();
+    // Usar scope 'global' para invalidar a sessão TAMBÉM no servidor Supabase
+    // Isto previne conflitos quando o utilizador tenta re-entrar com a mesma conta Google
+    await supabaseClient.auth.signOut({ scope: 'global' });
 
     // Resetar o flag para que o dashboard seja reiniciado no próximo login
     window._dashboardInitialized = false;
+
+    // Limpar parâmetros OAuth residuais do URL (hash e query string)
+    // para evitar que o Supabase tente processar tokens antigos ao recarregar
+    if (window.location.hash || window.location.search) {
+        window.history.replaceState({}, '', window.location.origin + window.location.pathname);
+    }
 
     showLoginScreen();
 
