@@ -125,7 +125,7 @@
         </div>
 
         <!-- Área de Conteúdo Principal -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             <!-- Área do Gráfico -->
             <div class="lg:col-span-2 glass-panel p-6 rounded-2xl relative">
                 <h3 class="text-lg font-semibold mb-6 flex items-center">
@@ -157,6 +157,26 @@
                 </div>
             </div>
         </div>
+
+        <!-- NOVA ÁREA: Clima & Conforto Inteligente -->
+        <div class="glass-panel p-6 rounded-2xl mb-8 relative shine overflow-hidden group animation-slideIn">
+            <div class="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-accent/10 opacity-50"></div>
+            <div class="relative z-10 flex flex-col md:flex-row items-center justify-between">
+                <div class="flex items-center mb-4 md:mb-0">
+                    <div class="bg-purple-500/20 p-3 rounded-xl text-purple-400 mr-4">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-white">Assistente de Conforto</h3>
+                        <p class="text-sm text-slate-400">Exterior: <span id="weather-out" class="font-medium text-slate-300">A carregar...</span> &nbsp;|&nbsp; Interior: <span id="weather-in" class="font-medium text-slate-300">--</span></p>
+                    </div>
+                </div>
+                <div class="bg-dark/50 border border-white/5 p-4 rounded-xl w-full md:w-[60%] shadow-inner flex items-center">
+                    <p class="text-slate-300 text-sm" id="weather-recommendation">A cruzar dados locais com o satélite meteorológico...</p>
+                </div>
+            </div>
+        </div>
+
         </div> <!-- Fim Vista Resumo -->
 
         <!-- Vista: Tabela de Histórico -->

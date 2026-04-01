@@ -167,6 +167,11 @@ async function fetchData() {
             } else {
                 allDataHistory = data;
             }
+            
+            // Tenta atualizar a recomendação com os novos dados
+            if (typeof updateRecommendation === 'function') {
+                updateRecommendation();
+            }
         }
     } catch (e) {
         console.error("Erro ao obter dados", e);
@@ -407,3 +412,78 @@ function renderHistoryTable() {
        tableBody.appendChild(tr);
     });
 }
+
+// ==========================================
+// ASSISTENTE DE CONFORTO (Open-Meteo)
+// ==========================================
+let currentOutdoorWeather = null;
+
+async function fetchOutdoorWeather() {
+    try {
+        // Coordenadas padrão: Lisboa (Podes mudar depois para onde vives)
+        const lat = 38.7167;
+        const lon = -9.1333;
+        
+        // Open-Meteo é grátis, hiper-rápido e não requer API key!
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,rain&timezone=Europe%2FLisbon`;
+        
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const weatherData = await res.json();
+        
+        currentOutdoorWeather = weatherData.current;
+        updateRecommendation(); // Atualiza a UI imediatamente
+    } catch (e) {
+        console.error("Erro ao obter meteorologia:", e);
+        const recEl = document.getElementById('weather-recommendation');
+        if (recEl) recEl.innerText = "Erro ao ligar ao serviço Meteorológico.";
+    }
+}
+
+function updateRecommendation() {
+    if (!currentOutdoorWeather || allDataHistory.length === 0) return;
+    
+    // Dados do teu Quarto (os mais recentes vindos do teu ESP32)
+    const latestIndoor = allDataHistory[0];
+    const inTemp = latestIndoor.temperature;
+    
+    // Dados da Rua (Temperatura e Chuva)
+    const outTemp = currentOutdoorWeather.temperature_2m;
+    const outHum = currentOutdoorWeather.relative_humidity_2m;
+    const isRaining = currentOutdoorWeather.rain > 0;
+    
+    // Atualizar os mostradores textuais na interface
+    const elOut = document.getElementById('weather-out');
+    const elIn = document.getElementById('weather-in');
+    if (elOut) elOut.innerText = `${outTemp.toFixed(1)}°C (Hum: ${outHum}%)`;
+    if (elIn) elIn.innerText = `${inTemp.toFixed(1)}°C`;
+    
+    const recEl = document.getElementById('weather-recommendation');
+    if (!recEl) return;
+    
+    // 🧠 O CÉREBRO DA AUTOMAÇÃO & RECOMENDAÇÕES
+    if (isRaining) {
+        recEl.innerHTML = "🌧️ <strong>Atenção:</strong> Está a chover lá fora. Certifica-te que as janelas do quarto estão fechadas!";
+        recEl.className = "text-blue-400 text-sm";
+    } else if (inTemp > 25 && outTemp < inTemp - 1) {
+        recEl.innerHTML = `🍃 <strong>Dica de Ar Fresco:</strong> O teu quarto está quente (${inTemp.toFixed(1)}°C). Lá fora está mais fresco (${outTemp.toFixed(1)}°C). É ideal abrires a janela para arejar!`;
+        recEl.className = "text-green-400 text-sm";
+    } else if (inTemp < 19 && outTemp > inTemp + 1) {
+        recEl.innerHTML = `☀️ <strong>Dica de Calor:</strong> O quarto está frio. Lá fora está mais ameno (${outTemp.toFixed(1)}°C). Abre a janela e deixa entrar o sol!`;
+        recEl.className = "text-orange-400 text-sm";
+    } else if (inTemp > 26 && outTemp >= inTemp) {
+        recEl.innerHTML = `🔥 <strong>Cuidado:</strong> Está imenso calor tanto dentro como fora. Pondera ligar a ventoinha/AC e fechar os estores!`;
+        recEl.className = "text-red-400 text-sm animate-pulse";
+    } else if (latestIndoor.humidity > 65) {
+        recEl.innerHTML = `💧 <strong>Humidade Elevada:</strong> O quarto está muito húmido (${latestIndoor.humidity.toFixed(1)}%). Recomendamos arejar ou usar desumidificador para prevenir fungos.`;
+        recEl.className = "text-cyan-400 text-sm";
+    } else {
+        recEl.innerHTML = "✨ <strong>Ambiente Perfeito:</strong> O clima no teu quarto está excelente e a temperatura confortável. Trabalha à vontade!";
+        recEl.className = "text-slate-300 text-sm";
+    }
+}
+
+// Inicializar a meteorologia e definir um loop de 5 minutos
+// (Mudar meteorologia a cada 2s não faz sentido, a cada 5m é o ideal para a API)
+fetchOutdoorWeather();
+setInterval(fetchOutdoorWeather, 300000);
