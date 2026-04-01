@@ -1,3 +1,139 @@
+// ============================================================
+// CONFIGURAÇÃO SUPABASE
+// Substitui pelos teus valores do Supabase Dashboard:
+// Project Settings → API → Project URL e anon/public key
+// ============================================================
+const SUPABASE_URL  = 'https://bjdergirxpfgbypvyeiy.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJqZGVyZ2lyeHBmZ2J5cHZ5ZWl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MjkzNzUsImV4cCI6MjA5MDIwNTM3NX0.cnPy8NWPzpaMHXKW43IXUt2Xg5riGdpszPMl7zra_uU';
+
+const { createClient } = supabase;
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// ============================================================
+// AUTENTICAÇÃO
+// ============================================================
+
+/** Mostra o ecrã de login e esconde a app principal. */
+function showLoginScreen() {
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('app-main').classList.add('hidden');
+}
+
+/** Esconde o ecrã de login e mostra a app principal. */
+function showApp(user) {
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app-main').classList.remove('hidden');
+
+    // Preencher perfil do utilizador
+    const nameEl   = document.getElementById('user-name');
+    const avatarEl = document.getElementById('user-avatar');
+    const placeholderEl = document.getElementById('user-avatar-placeholder');
+
+    if (user) {
+        const fullName = user.user_metadata?.full_name || user.email || 'Utilizador';
+        const firstName = fullName.split(' ')[0];
+        const avatarUrl = user.user_metadata?.avatar_url;
+
+        if (nameEl) {
+            nameEl.innerText = firstName;
+            nameEl.classList.remove('hidden');
+        }
+
+        if (avatarUrl && avatarEl) {
+            avatarEl.src = avatarUrl;
+            avatarEl.classList.remove('hidden');
+            if (placeholderEl) placeholderEl.classList.add('hidden');
+        } else if (placeholderEl) {
+            placeholderEl.innerText = firstName.charAt(0).toUpperCase();
+        }
+    }
+
+    // Inicializar o dashboard após login confirmado
+    initDashboard();
+}
+
+/** Trata o clique no botão de login com Google. */
+async function loginWithGoogle() {
+    const btn = document.getElementById('btn-google-login');
+    const errEl = document.getElementById('login-error');
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `
+            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            A redirecionar...
+        `;
+    }
+
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+            // Redireciona para a mesma página após o login no Google
+            redirectTo: window.location.href
+        }
+    });
+
+    if (error) {
+        console.error('Erro de login:', error);
+        if (errEl) {
+            errEl.innerText = 'Erro ao iniciar sessão: ' + error.message;
+            errEl.classList.remove('hidden');
+        }
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `
+                <svg class="w-5 h-5" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                </svg>
+                Continuar com Google
+            `;
+        }
+    }
+}
+
+/** Termina a sessão do utilizador. */
+async function logout() {
+    await supabaseClient.auth.signOut();
+    showLoginScreen();
+    // Limpar o perfil
+    const nameEl = document.getElementById('user-name');
+    const avatarEl = document.getElementById('user-avatar');
+    const placeholderEl = document.getElementById('user-avatar-placeholder');
+    if (nameEl) nameEl.classList.add('hidden');
+    if (avatarEl) avatarEl.classList.add('hidden');
+    if (placeholderEl) {
+        placeholderEl.classList.remove('hidden');
+        placeholderEl.innerText = '?';
+    }
+}
+
+// Ouvinte de eventos de autenticação (sessao persistente entre recarreg.)
+supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (session && session.user) {
+        showApp(session.user);
+    } else {
+        showLoginScreen();
+    }
+});
+
+// Registar eventos dos botões de login/logout
+document.getElementById('btn-google-login')?.addEventListener('click', loginWithGoogle);
+document.getElementById('btn-logout')?.addEventListener('click', logout);
+
+// ============================================================
+// FUNÇÃO PRINCIPAL DO DASHBOARD (chamada após login)
+// ============================================================
+function initDashboard() {
+    // Verificar se o dashboard já foi iniciado para evitar dupla inicialização
+    if (window._dashboardInitialized) return;
+    window._dashboardInitialized = true;
+
 const API_BASE = "/api";
 
 // Inicializar o Chart.js
@@ -507,3 +643,5 @@ function updateRecommendation() {
 // Inicializar a meteorologia pedindo permissões primeiro e definir um loop de 5 minutos de refresco
 initWeatherWithLocation();
 setInterval(fetchOutdoorWeather, 300000);
+
+} // fim initDashboard()

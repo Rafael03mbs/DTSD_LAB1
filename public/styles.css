@@ -59,3 +59,30 @@ body {
     20% { left: 200%; }
     100% { left: 200%; }
 }
+
+/* Animação de entrada do ecrã de login */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Animação de deslize dos alertas */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+.animation-slideIn {
+    animation: slideIn 0.3s ease-out both;
+}
