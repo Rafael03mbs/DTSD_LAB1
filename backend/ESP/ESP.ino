@@ -36,23 +36,30 @@ void setup() {
   pinMode(pinoTrig, OUTPUT);
   pinMode(pinoEcho, INPUT);
 
+  // Delay de arranque: dá tempo ao LCD para alimentar correctamente
+  // Sem isto o LCD pode mostrar caracteres aleatórios ao ligar
+  delay(100);
+
   // Inicia o Ecrã LCD
   lcd.init();
-  lcd.backlight(); // Liga a luz de fundo do ecrã
+  lcd.clear(); // Limpa qualquer lixo da memória do controlador
+  lcd.backlight();
   
   // Mensagem de boas-vindas
-  lcd.setCursor(0, 0); // Coluna 0, Linha 0
-  lcd.print("A iniciar o");
-  lcd.setCursor(0, 1); // Coluna 0, Linha 1
-  lcd.print("Super Projeto...");
+  lcd.setCursor(0, 0);
+  lcd.print("A iniciar o     "); // 16 chars exatos
+  lcd.setCursor(0, 1);
+  lcd.print("Super Projeto..." ); // 16 chars exatos
   delay(2000); 
-  lcd.clear(); // Limpa o ecrã
+  lcd.clear();
 
   // Ligar ao Wi-Fi
   Serial.print("A ligar ao Wi-Fi: ");
   Serial.println(ssid);
   lcd.setCursor(0,0);
-  lcd.print("A ligar Wi-Fi...");
+  lcd.print("A ligar Wi-Fi..."); // 16 chars exatos
+  lcd.setCursor(0,1);
+  lcd.print("                "); // Limpar linha 2
   WiFi.begin(ssid, password);
   
   while (WiFi.status() != WL_CONNECTED) {
@@ -67,7 +74,9 @@ void setup() {
   
   lcd.clear();
   lcd.setCursor(0,0);
-  lcd.print("Wi-Fi Ligado!");
+  lcd.print("Wi-Fi Ligado!   "); // 16 chars exatos
+  lcd.setCursor(0,1);
+  lcd.print("                "); // Linha 2 limpa
   delay(1500);
   lcd.clear();
 }
@@ -112,28 +121,40 @@ void loop() {
   }
 
   // ==========================================
-  // 4. ESCREVER NO ECRÃ LCD
+  // 4. ESCREVER NO ECRA LCD
   // ==========================================
-  
-  // Linha de Cima: Temperatura e Humidade (Ex: "T:25.0C H:50% ")
-  lcd.setCursor(0, 0); 
+
+  // Buffers de 16 caracteres exatos (16 + \0)
+  // snprintf garante que nunca escrevemos mais do que 16 chars,
+  // e os espaços no formato preenchem o resto -> sem lixo!
+  char linha0[17];
+  char linha1[17];
+
+  // Linha de Cima: Temperatura e Humidade
+  // Formato: "T:XX.XC H:XXX%  " (sempre 16 chars)
   if (isnan(temperatura) || isnan(humidade)) {
-    lcd.print("Erro no DHT11!  ");
+    snprintf(linha0, sizeof(linha0), "Erro DHT11!     ");
   } else {
-    lcd.print("T:");
-    lcd.print(temperatura, 1);
-    lcd.print("C H:");
-    lcd.print(humidade, 0);
-    lcd.print("%   "); // Os espaços no fim apagam lixo de leituras anteriores
+    snprintf(linha0, sizeof(linha0), "T:%4.1fC H:%3.0f%%  ", temperatura, humidade);
   }
 
-  // Linha de Baixo: Luz e Distância (Ex: "L:450Lx D:15cm  ")
+  // Linha de Baixo: Luz e Distancia
+  // Formato: "L:XXXXLx D:XXXcm" (sempre 16 chars)
+  snprintf(linha1, sizeof(linha1), "L:%3.0fLx D:%3.0fcm", valorLux, distancia_cm);
+
+  // Limpar o ecrã periodicamente para evitar píxeis presos
+  // (apenas 1 vez a cada 20 ciclos = ~1 min)
+  static int cicloLCD = 0;
+  if (++cicloLCD >= 20) {
+    lcd.clear();
+    cicloLCD = 0;
+  }
+
+  // Escrever as linhas no LCD
+  lcd.setCursor(0, 0);
+  lcd.print(linha0);
   lcd.setCursor(0, 1);
-  lcd.print("L:");
-  lcd.print(valorLux, 0);
-  lcd.print("Lx D:");
-  lcd.print(distancia_cm, 0);
-  lcd.print("cm   "); // Espaços para limpar o resto da linha
+  lcd.print(linha1);
 
   // ==========================================
   // 5. ENVIAR DADOS PARA O SERVIDOR

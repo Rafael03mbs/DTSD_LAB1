@@ -74,8 +74,9 @@ async function loginWithGoogle() {
     const { error } = await supabaseClient.auth.signInWithOAuth({
         provider: 'google',
         options: {
-            // Redireciona para a mesma página após o login no Google
-            redirectTo: window.location.href
+            // Usar apenas a origem (sem query params/hash) para evitar loops
+            // no segundo login causados por parâmetros OAuth residuais no URL
+            redirectTo: window.location.origin
         }
     });
 
@@ -121,13 +122,30 @@ async function logout() {
     }
 }
 
-// Ouvinte de eventos de autenticação (sessao persistente entre recarreg.)
-supabaseClient.auth.onAuthStateChange((event, session) => {
+// ============================================================
+// GESTÃO DE SESSÃO
+// ============================================================
+
+// 1. Verificação inicial: ao carregar a página, ver se já existe sessão ativa
+//    (inclui a sessão recém-criada após redirect OAuth)
+supabaseClient.auth.getSession().then(({ data: { session } }) => {
     if (session && session.user) {
         showApp(session.user);
     } else {
         showLoginScreen();
     }
+});
+
+// 2. Ouvinte de mudanças de estado (APENAS para eventos explícitos)
+//    NÃO reagimos a INITIAL_SESSION porque já tratamos acima com getSession()
+//    e o INITIAL_SESSION pode disparar com null a meio do processo PKCE
+supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && session?.user) {
+        showApp(session.user);
+    } else if (event === 'SIGNED_OUT') {
+        showLoginScreen();
+    }
+    // TOKEN_REFRESHED, USER_UPDATED, etc. são ignorados
 });
 
 // Registar eventos dos botões de login/logout
