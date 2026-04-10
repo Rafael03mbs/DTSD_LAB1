@@ -337,25 +337,73 @@ let lastDataReceivedTimestamp = 0;
 let allDataHistory = [];
 let hideAlertsBefore = 0; // Timestamp local a partir do qual mostramos alertas
 
+let _wasOnline = true; // Rastreia o estado anterior para evitar re-renders desnecessários
+
 function updateConnectionStatus(isOnline) {
     const statusText = document.getElementById('status-text');
-    const statusDot = document.getElementById('status-dot');
+    const statusDot  = document.getElementById('status-dot');
     const statusPing = document.getElementById('status-ping');
-    
+
     if (!statusText || !statusDot || !statusPing) return;
 
     if (isOnline) {
-        statusText.innerText = "Sistema Online";
-        statusText.className = "text-sm font-medium text-slate-300";
-        statusDot.className = "relative inline-flex rounded-full h-3 w-3 bg-green-500";
+        statusText.innerText  = "Sistema Online";
+        statusText.className  = "text-xs sm:text-sm font-medium text-slate-300";
+        statusDot.className   = "relative inline-flex rounded-full h-3 w-3 bg-green-500";
         statusPing.classList.replace('bg-slate-400', 'bg-green-400');
         statusPing.classList.remove('hidden');
+
+        // Restaurar zona de conforto se estava offline
+        if (!_wasOnline) {
+            _wasOnline = true;
+            updateRecommendation(); // Re-renderiza com dados reais
+        }
     } else {
-        statusText.innerText = "Sistema Offline";
-        statusText.className = "text-sm font-medium text-slate-500";
-        statusDot.className = "relative inline-flex rounded-full h-3 w-3 bg-slate-500";
+        statusText.innerText  = "Sistema Offline";
+        statusText.className  = "text-xs sm:text-sm font-medium text-slate-500";
+        statusDot.className   = "relative inline-flex rounded-full h-3 w-3 bg-slate-500";
         statusPing.classList.replace('bg-green-400', 'bg-slate-400');
         statusPing.classList.add('hidden');
+
+        // Mostrar estado offline na zona de conforto
+        if (_wasOnline) {
+            _wasOnline = false;
+            showComfortOffline();
+        }
+    }
+}
+
+/** Mostra o estado offline na secção do Assistente de Conforto. */
+function showComfortOffline() {
+    const recEl = document.getElementById('weather-recommendation');
+    const elIn  = document.getElementById('weather-in');
+    const elOut = document.getElementById('weather-out');
+
+    // Calcular há quanto tempo sem dados
+    const secsAgo = lastDataReceivedTimestamp > 0
+        ? Math.round((Date.now() - lastDataReceivedTimestamp) / 1000)
+        : null;
+    const agoStr = secsAgo !== null
+        ? (secsAgo < 60 ? `há ${secsAgo}s` : `há ${Math.round(secsAgo / 60)}min`)
+        : 'hora desconhecida';
+
+    if (elIn)  elIn.innerHTML  = '<span class="text-slate-500">--</span>';
+    if (elOut && !elOut.innerText.includes('--')) {
+        // Manter o valor meteorológico exterior (não depende do ESP32)
+    }
+
+    if (recEl) {
+        recEl.innerHTML = `
+            <span class="inline-flex items-center gap-2">
+                <svg class="w-4 h-4 shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M18.364 5.636a9 9 0 11-12.728 0M12 3v9"/>
+                </svg>
+                <strong class="text-slate-400">Dispositivo Offline</strong>
+                <span class="text-slate-500 text-xs">${agoStr} &mdash; sem dados do ESP32</span>
+            </span>
+        `;
+        recEl.className = 'text-sm animate-pulse';
     }
 }
 
@@ -558,8 +606,8 @@ if (btnDashboard) {
     btnDashboard.addEventListener('click', () => {
         viewDashboard.classList.remove('hidden');
         viewHistory.classList.add('hidden');
-        btnDashboard.className = "px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]";
-        btnHistory.className   = "px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent";
+        btnDashboard.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)] text-sm sm:text-base";
+        btnHistory.className   = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base";
     });
 }
 
@@ -567,8 +615,8 @@ if (btnHistory) {
     btnHistory.addEventListener('click', () => {
         viewHistory.classList.remove('hidden');
         viewDashboard.classList.add('hidden');
-        btnHistory.className   = "px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]";
-        btnDashboard.className = "px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent";
+        btnHistory.className   = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)] text-sm sm:text-base";
+        btnDashboard.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base";
     });
 }
 

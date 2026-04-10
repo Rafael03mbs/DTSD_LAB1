@@ -89,29 +89,35 @@
     <div class="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
     <div class="fixed bottom-[-20%] right-[-10%] w-[40%] h-[40%] bg-purple-600/20 rounded-full blur-[100px] pointer-events-none"></div>
 
-    <div class="container mx-auto px-6 py-8 relative z-10 w-full max-w-7xl">
+    <div class="container mx-auto px-3 sm:px-6 py-6 sm:py-8 relative z-10 w-full max-w-7xl">
         <!-- Cabeçalho -->
-        <header class="flex justify-between items-center mb-10 glass-panel p-5 rounded-2xl shine">
-            <div>
-                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-accent to-purple-400">
+        <header class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8 glass-panel p-4 sm:p-5 rounded-2xl shine">
+            <!-- Título -->
+            <div class="min-w-0">
+                <h1 class="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-accent to-purple-400 truncate">
                     Centro de Segurança ESP32
                 </h1>
-                <p class="text-slate-400 text-sm mt-1">DTSD Analytics & Intrusion Detection</p>
+                <p class="text-slate-400 text-xs sm:text-sm mt-1">DTSD Analytics &amp; Intrusion Detection</p>
             </div>
-            <div class="flex items-center space-x-4">
-                <span class="relative flex h-3 w-3">
-                  <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75 hidden"></span>
-                  <span id="status-dot" class="relative inline-flex rounded-full h-3 w-3 bg-slate-500"></span>
-                </span>
-                <span id="status-text" class="text-sm font-medium text-slate-500">A iniciar...</span>
 
-                <!-- Separador -->
-                <div class="w-px h-6 bg-white/10"></div>
+            <!-- Controles direita -->
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+                <!-- Status -->
+                <div class="flex items-center gap-2">
+                    <span class="relative flex h-3 w-3">
+                      <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75 hidden"></span>
+                      <span id="status-dot" class="relative inline-flex rounded-full h-3 w-3 bg-slate-500"></span>
+                    </span>
+                    <span id="status-text" class="text-xs sm:text-sm font-medium text-slate-500">A iniciar...</span>
+                </div>
+
+                <!-- Separador (oculto em muito pequeno) -->
+                <div class="hidden sm:block w-px h-6 bg-white/10"></div>
 
                 <!-- Perfil do utilizador -->
-                <div class="flex items-center space-x-2 cursor-pointer group" id="user-profile-area">
+                <div class="flex items-center gap-2 cursor-pointer group" id="user-profile-area">
                     <img id="user-avatar" src="" alt="Avatar" class="w-8 h-8 rounded-full ring-2 ring-accent/30 hidden object-cover">
-                    <div id="user-avatar-placeholder" class="w-8 h-8 rounded-full bg-accent/20 ring-2 ring-accent/30 flex items-center justify-center text-accent text-xs font-bold">
+                    <div id="user-avatar-placeholder" class="w-8 h-8 rounded-full bg-accent/20 ring-2 ring-accent/30 flex items-center justify-center text-accent text-xs font-bold shrink-0">
                         ?
                     </div>
                     <span id="user-name" class="text-sm font-medium text-slate-300 hidden sm:block">--</span>
@@ -119,8 +125,8 @@
 
                 <!-- Botão Registar Dispositivo -->
                 <button id="btn-register-device" title="Associar ESP32 à minha conta"
-                    class="flex items-center gap-1.5 text-xs bg-accent/10 hover:bg-accent/20 text-accent px-3 py-1.5 rounded-lg transition-colors border border-accent/20">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    class="flex items-center gap-1.5 text-xs bg-accent/10 hover:bg-accent/20 text-accent px-3 py-1.5 rounded-lg transition-colors border border-accent/20 whitespace-nowrap">
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
                     </svg>
                     Dispositivo
@@ -128,8 +134,8 @@
 
                 <!-- Botão de Logout -->
                 <button id="btn-logout" title="Terminar Sessão"
-                    class="flex items-center gap-1.5 text-xs bg-white/5 hover:bg-danger/20 hover:text-danger text-slate-400 px-3 py-1.5 rounded-lg transition-colors border border-transparent hover:border-danger/30">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    class="flex items-center gap-1.5 text-xs bg-white/5 hover:bg-danger/20 hover:text-danger text-slate-400 px-3 py-1.5 rounded-lg transition-colors border border-transparent hover:border-danger/30 whitespace-nowrap">
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
                     </svg>
                     Sair
@@ -138,9 +144,9 @@
         </header>
 
         <!-- Separadores -->
-        <nav class="flex space-x-4 mb-6">
-            <button id="tab-btn-dashboard" class="px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)]">Resumo</button>
-            <button id="tab-btn-history" class="px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent">Histórico de Dados</button>
+        <nav class="flex flex-wrap gap-2 sm:gap-4 mb-6">
+            <button id="tab-btn-dashboard" class="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)] text-sm sm:text-base">Resumo</button>
+            <button id="tab-btn-history" class="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base">Histórico de Dados</button>
         </nav>
 
         <!-- Vista: Resumo -->
@@ -327,8 +333,8 @@
     <!-- ============================================================ -->
     <!-- MODAL: Registar Dispositivo ESP32 -->
     <!-- ============================================================ -->
-    <div id="modal-device" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
-        <div class="glass-panel rounded-2xl p-8 w-full max-w-md border border-white/10 shadow-2xl" style="animation: fadeInUp 0.3s ease-out both;">
+    <div id="modal-device" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden p-4">
+        <div class="glass-panel rounded-2xl p-5 sm:p-8 w-full max-w-md border border-white/10 shadow-2xl" style="animation: fadeInUp 0.3s ease-out both;">
             <div class="flex justify-between items-start mb-6">
                 <div>
                     <h2 class="text-xl font-bold text-white">Associar Dispositivo ESP32</h2>
