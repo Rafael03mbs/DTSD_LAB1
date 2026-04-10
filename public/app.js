@@ -338,7 +338,6 @@ function initDashboard() {
     let hideAlertsBefore = 0; // Timestamp local a partir do qual mostramos alertas
 
     let _wasOnline = true; // Rastreia o estado anterior para evitar re-renders desnecessários
-    let _weatherCycleCount = 0; // Módulo do clima só arranca no 2.º ciclo (após a 1.ª verificação de conectividade)
 
     function updateConnectionStatus(isOnline) {
         const statusText = document.getElementById('status-text');
@@ -593,13 +592,6 @@ function initDashboard() {
         } else {
             updateConnectionStatus(false);
         }
-
-        // Inicializar o módulo do clima no 2.º ciclo (~4s), após a 1.ª verificação de conectividade (~2s)
-        _weatherCycleCount++;
-        if (_weatherCycleCount === 2) {
-            initWeatherWithLocation();
-            setInterval(fetchOutdoorWeather, 300000);
-        }
     }, 2000);
 
     // Lógica de Alternância de Separadores
@@ -799,6 +791,12 @@ function initDashboard() {
     function updateRecommendation() {
         if (!currentOutdoorWeather || allDataHistory.length === 0) return;
 
+        // Se o dispositivo estiver offline, não mostrar recomendações com dados desatualizados
+        if (!_wasOnline) {
+            showComfortOffline();
+            return;
+        }
+
         // Dados do teu Quarto (os mais recentes vindos do teu ESP32)
         const latestIndoor = allDataHistory[0];
         const inTemp = latestIndoor.temperature;
@@ -839,7 +837,8 @@ function initDashboard() {
         }
     }
 
-    // NOTA: A meteorologia é inicializada dentro do setInterval acima,
-    // após a primeira verificação de conectividade (~2s após o arranque).
+    // Inicializar meteorologia imediatamente (updateRecommendation já protege contra estado offline)
+    initWeatherWithLocation();
+    setInterval(fetchOutdoorWeather, 300000);
 
 } // fim initDashboard()
