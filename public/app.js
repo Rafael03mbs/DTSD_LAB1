@@ -337,7 +337,7 @@ let lastDataReceivedTimestamp = 0;
 let allDataHistory = [];
 let hideAlertsBefore = 0; // Timestamp local a partir do qual mostramos alertas
 
-let _wasOnline = true; // Rastreia o estado anterior para evitar re-renders desnecessários
+let _wasOnline = false; // Começa como false — só passa a true quando chegarem dados reais
 
 function updateConnectionStatus(isOnline) {
     const statusText = document.getElementById('status-text');
@@ -477,10 +477,13 @@ async function fetchData() {
                 distCard.style.border = "1px solid rgba(255, 255, 255, 0.05)";
             }
 
+            // Atualizar o timestamp dos últimos dados recebidos e o estado de conexão
+            lastDataReceivedTimestamp = Date.now();
+            updateConnectionStatus(true);
+
             // Atualizar a Tabela de Histórico
             let latestTimestamp = data.length > 0 ? data[0].timestamp : null;
             if (data.length !== lastDataCount || latestTimestamp !== lastRefreshTime) {
-                lastDataReceivedTimestamp = Date.now();
                 allDataHistory = data;
                 renderHistoryTable();
                 lastDataCount = data.length;
@@ -496,6 +499,7 @@ async function fetchData() {
         }
     } catch (e) {
         console.error("Erro ao obter dados", e);
+        updateConnectionStatus(false);
     }
 }
 
@@ -576,6 +580,9 @@ async function fetchAlerts() {
     }
 }
 
+// Mostrar imediatamente como offline/pendente ao abrir a página
+updateConnectionStatus(false);
+
 // Obtenção inicial dos dados
 fetchData();
 fetchAlerts();
@@ -589,9 +596,9 @@ setInterval(() => {
     if (lastDataReceivedTimestamp > 0) {
         const isOnline = (Date.now() - lastDataReceivedTimestamp) < 5000;
         updateConnectionStatus(isOnline);
-    } else {
-        updateConnectionStatus(false);
     }
+    // Se lastDataReceivedTimestamp === 0, fetchData() ainda não recebeu nada
+    // e já mostrámos offline acima — não é preciso repetir
 }, 2000);
 
 // Lógica de Alternância de Separadores
