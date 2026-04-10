@@ -338,6 +338,7 @@ function initDashboard() {
     let hideAlertsBefore = 0; // Timestamp local a partir do qual mostramos alertas
 
     let _wasOnline = true; // Rastreia o estado anterior para evitar re-renders desnecessários
+    let _weatherInitialized = false; // Módulo do clima só arranca após a primeira verificação de conectividade
 
     function updateConnectionStatus(isOnline) {
         const statusText = document.getElementById('status-text');
@@ -592,6 +593,13 @@ function initDashboard() {
         } else {
             updateConnectionStatus(false);
         }
+
+        // Inicializar o módulo do clima apenas após a primeira verificação de conectividade (~2s)
+        if (!_weatherInitialized) {
+            _weatherInitialized = true;
+            initWeatherWithLocation();
+            setInterval(fetchOutdoorWeather, 300000);
+        }
     }, 2000);
 
     // Lógica de Alternância de Separadores
@@ -831,8 +839,7 @@ function initDashboard() {
         }
     }
 
-    // Inicializar a meteorologia pedindo permissões primeiro e definir um loop de 5 minutos de refresco
-    initWeatherWithLocation();
-    setInterval(fetchOutdoorWeather, 300000);
+    // NOTA: A meteorologia é inicializada dentro do setInterval acima,
+    // após a primeira verificação de conectividade (~2s após o arranque).
 
 } // fim initDashboard()
