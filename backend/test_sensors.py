@@ -7,8 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv() # Carregar o ficheiro .env
 
-# Cole aqui o link que o Vercel lhe deu (Não se esqueça do /api/data no fim!)
-# Exemplo: API_URL = "https://dtsd-security-rafael.vercel.app/api/data"
+
 API_URL = "https://dtsd-lab-1.vercel.app/api/data"
 API_KEY = os.environ.get("API_SECRET_KEY") 
 

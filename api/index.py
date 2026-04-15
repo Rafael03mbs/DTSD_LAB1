@@ -1,32 +1,49 @@
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from supabase import create_client, Client
 from datetime import datetime, timezone
 from typing import Optional
+from collections import defaultdict
+from time import time as time_now
+import hmac
+import re
 import os
+
+# [S7] Apenas carregar .env em desenvolvimento local (na Vercel, as variáveis são injetadas pelo painel)
+if os.environ.get("VERCEL") is None:
+    from dotenv import load_dotenv
+    load_dotenv()
 
 app = FastAPI(title="ESP32 Security Monitor API")
 
-# Configurar CORS para permitir a comunicação com o painel
+# [C4] CORS restrito apenas aos domínios necessários
+ALLOWED_ORIGINS = [
+    os.environ.get("FRONTEND_URL", "https://dtsd-security-monitor.vercel.app"),
+    "http://localhost:3000",   # Dev local
+    "http://localhost:5500",   # Live Server VS Code
+    "http://127.0.0.1:5500",  # Live Server VS Code (alternativo)
+    "http://localhost:8000",   # Uvicorn local
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all for local dev
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization", "x-api-key"],
 )
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # 1. Configurações do Supabase (Colocar as chaves reais)
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 USE_SUPABASE = True
 
-API_SECRET_KEY = os.environ.get("API_SECRET_KEY") 
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY")
+
+# [C6] Falha imediata se a chave API não estiver configurada — previne bypass total
+if not API_SECRET_KEY:
+    raise RuntimeError("FATAL: API_SECRET_KEY não está definida nas variáveis de ambiente! O servidor não pode arrancar sem esta chave.")
 
 if USE_SUPABASE:
     try:
@@ -38,34 +55,71 @@ if USE_SUPABASE:
 else:
     print("[AVISO] Supabase desativado (Credenciais não configuradas). Utiliza recurso em memória para testes locais.")
 
-# Estrutura de dados do ESP32
+# [S4] Estrutura de dados do ESP32 — com validação de input
 class SensorData(BaseModel):
-    device_id: str
-    temperature: float     # DHT22
-    humidity: float        # DHT22
-    light_level: float     # LDR
-    distance: float        # HC-SR04
-    flame_detected: bool   # Sensor de chama
+    device_id: str = Field(..., min_length=1, max_length=64)
+    temperature: float = Field(..., ge=-50, le=80)       # DHT22
+    humidity: float = Field(..., ge=0, le=100)            # DHT22
+    light_level: float = Field(..., ge=0, le=100000)      # LDR
+    distance: float = Field(..., ge=0, le=500)            # HC-SR04
+    flame_detected: bool                                   # Sensor de chama
+
+    @validator('device_id')
+    def validate_device_id(cls, v):
+        if not re.match(r'^[a-zA-Z0-9_\-]+$', v):
+            raise ValueError('device_id deve conter apenas letras, números, _ e -')
+        return v
 
 # Modelo para registo de dispositivo
 class DeviceRegister(BaseModel):
-    device_id: str
+    device_id: str = Field(..., min_length=1, max_length=64)
+
+    @validator('device_id')
+    def validate_device_id(cls, v):
+        if not re.match(r'^[a-zA-Z0-9_\-]+$', v):
+            raise ValueError('device_id deve conter apenas letras, números, _ e -')
+        return v
 
 # Armazenamento em memória para testes imediatos antes da configuração total do Supabase
 local_data_storage = []
 local_alerts_storage = []
 
+# [A7] Rate limiter simples por device_id (protege contra DoS por instância quente)
+_rate_limit_map = defaultdict(list)
+RATE_LIMIT_WINDOW = 60   # segundos
+RATE_LIMIT_MAX = 30      # max requests por device_id por minuto
+
+def check_rate_limit(device_id: str) -> bool:
+    """Retorna True se o pedido deve ser rejeitado por excesso de taxa."""
+    now = time_now()
+    window = _rate_limit_map[device_id]
+    _rate_limit_map[device_id] = [t for t in window if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limit_map[device_id]) >= RATE_LIMIT_MAX:
+        return True
+    _rate_limit_map[device_id].append(now)
+    return False
+
+# [S3] Cache de mapeamento device_id -> user_id com TTL (reduz queries ao Supabase)
+_device_user_cache = {}
+_cache_ttl = 300  # 5 minutos
+
 def get_user_id_by_device(device_id: str) -> Optional[str]:
-    """Obtém o user_id associado a um device_id da tabela user_devices."""
+    """Obtém o user_id associado a um device_id, com cache de 5 minutos."""
     if not USE_SUPABASE:
         return None
+
+    now = time_now()
+    cached = _device_user_cache.get(device_id)
+    if cached and (now - cached['ts']) < _cache_ttl:
+        return cached['user_id']
+
     try:
         resp = supabase.table("user_devices").select("user_id").eq("device_id", device_id).single().execute()
-        if resp.data:
-            return resp.data.get("user_id")
+        user_id = resp.data.get("user_id") if resp.data else None
+        _device_user_cache[device_id] = {'user_id': user_id, 'ts': now}
+        return user_id
     except Exception:
-        pass
-    return None
+        return None
 
 def get_user_from_token(authorization: Optional[str]) -> Optional[dict]:
     """Valida o token JWT do Supabase e retorna o utilizador."""
@@ -80,8 +134,13 @@ def get_user_from_token(authorization: Optional[str]) -> Optional[dict]:
 
 @app.post("/api/data")
 def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
-    if x_api_key != API_SECRET_KEY:
+    # [C2] Comparação em tempo constante para prevenir timing attacks
+    if not x_api_key or not hmac.compare_digest(x_api_key, API_SECRET_KEY):
         raise HTTPException(status_code=401, detail="Acesso negado: Chave API invalida ou ausente")
+
+    # [A7] Verificar rate limit por dispositivo
+    if check_rate_limit(data.device_id):
+        raise HTTPException(status_code=429, detail="Demasiadas requisições. Tenta novamente mais tarde.")
 
     timestamp = datetime.now(timezone.utc).isoformat()
     data_dict = data.dict()
@@ -209,29 +268,50 @@ def get_my_devices(authorization: Optional[str] = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# [A5] Endpoints GET agora exigem autenticação e filtram por utilizador
 @app.get("/api/data")
-def get_recent_data():
+def get_recent_data(authorization: Optional[str] = Header(None)):
+    """Devolve os dados de segurança filtrados pelo utilizador autenticado."""
+    user = get_user_from_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+
     if USE_SUPABASE:
         try:
-            response = supabase.table("security_events").select("*").order("timestamp", desc=True).limit(100).execute()
+            response = (supabase.table("security_events")
+                       .select("*")
+                       .eq("user_id", str(user.id))
+                       .order("timestamp", desc=True)
+                       .limit(100)
+                       .execute())
             return response.data
         except Exception as e:
             print(f"Erro a ler do Supabase (data): {e}")
-            return local_data_storage
-    
-    return local_data_storage
+            return [d for d in local_data_storage if d.get("user_id") == str(user.id)]
+
+    return [d for d in local_data_storage if d.get("user_id") == str(user.id)]
 
 @app.get("/api/alerts")
-def get_recent_alerts():
+def get_recent_alerts(authorization: Optional[str] = Header(None)):
+    """Devolve os alertas filtrados pelo utilizador autenticado."""
+    user = get_user_from_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+
     if USE_SUPABASE:
         try:
-            response = supabase.table("security_alerts").select("*").order("timestamp", desc=True).limit(50).execute()
+            response = (supabase.table("security_alerts")
+                       .select("*")
+                       .eq("user_id", str(user.id))
+                       .order("timestamp", desc=True)
+                       .limit(50)
+                       .execute())
             return response.data
         except Exception as e:
             print(f"Erro a ler do Supabase (alerts): {e}")
-            return local_alerts_storage
-            
-    return local_alerts_storage
+            return [a for a in local_alerts_storage if a.get("user_id") == str(user.id)]
+
+    return [a for a in local_alerts_storage if a.get("user_id") == str(user.id)]
 
 if __name__ == "__main__":
     import uvicorn
