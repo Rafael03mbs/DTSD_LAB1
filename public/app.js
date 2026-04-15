@@ -169,14 +169,36 @@ let isAuthResolved = false;
 
 // 1. Listener primeiro (captura eventos durante o bootstrap, incluindo redirect OAuth)
 supabaseClient.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_IN' && session?.user) {
+    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
         isAuthResolved = true;
+        // Limpar o hash do URL que contém tokens (importante para segurança e no Safari)
+        if (window.location.hash.includes('access_token=')) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
         showApp(session.user);
     } else if (event === 'SIGNED_OUT') {
         showLoginScreen();
     }
-    // TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION são ignorados
+    // TOKEN_REFRESHED, USER_UPDATED são ignorados
 });
+
+// Solução específica para iOS Safari: Extrair manualmente o access_token do hash
+// Ocasionalmente, o redirecionamento nativo bloqueia a extração automática.
+if (window.location.hash && window.location.hash.includes('access_token=')) {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const access_token = hashParams.get('access_token');
+    const refresh_token = hashParams.get('refresh_token');
+    
+    if (access_token && refresh_token) {
+        supabaseClient.auth.setSession({ access_token, refresh_token }).then(({ data }) => {
+            if (data?.session && !isAuthResolved) {
+                isAuthResolved = true;
+                window.history.replaceState({}, document.title, window.location.pathname);
+                showApp(data.session.user);
+            }
+        });
+    }
+}
 
 // 2. Verificação inicial: para sessões já existentes que o listener pode não capturar
 supabaseClient.auth.getSession().then(({ data: { session } }) => {
