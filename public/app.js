@@ -174,6 +174,9 @@ function openDeviceModal() {
     document.getElementById('modal-device').classList.remove('hidden');
     const statusEl = document.getElementById('device-status');
     if (statusEl) { statusEl.classList.add('hidden'); statusEl.innerText = ''; }
+    
+    // Buscar a lista limpa
+    fetchMyDevices();
 }
 
 /** Fecha o modal de registo de dispositivo. */
@@ -226,7 +229,13 @@ async function saveDeviceRegistration() {
                 statusEl.className = 'text-xs mb-4 text-green-400';
                 statusEl.classList.remove('hidden');
             }
-            setTimeout(closeDeviceModal, 2000);
+            // Atualizar lista de dispositivos imediatamente
+            fetchMyDevices();
+            // Limpar campo
+            if (deviceIdInput) deviceIdInput.value = '';
+            
+            // Opcional: auto-fechar passado 3s
+            // setTimeout(closeDeviceModal, 3000);
         } else {
             const err = await res.json();
             if (statusEl) {
@@ -249,6 +258,45 @@ async function saveDeviceRegistration() {
 document.getElementById('btn-register-device')?.addEventListener('click', openDeviceModal);
 document.getElementById('btn-close-device-modal')?.addEventListener('click', closeDeviceModal);
 document.getElementById('btn-save-device')?.addEventListener('click', saveDeviceRegistration);
+
+/** Obtém e desenha a lista de dispositivos no modal. */
+async function fetchMyDevices() {
+    const listEl = document.getElementById('my-devices-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<li class="text-slate-500 text-xs italic">A carregar...</li>';
+
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) {
+        listEl.innerHTML = '<li class="text-red-400 text-xs">Erro: Sem sessão iniciada.</li>';
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/devices', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        if (res.ok) {
+            const devices = await res.json();
+            if (devices.length === 0) {
+                listEl.innerHTML = '<li class="text-slate-500 text-xs italic">Não tens nenhum dispositivo associado.</li>';
+            } else {
+                listEl.innerHTML = devices.map(d => `
+                    <li class="bg-white/5 border border-white/5 p-2 rounded-lg flex items-center gap-2">
+                        <div class="bg-accent/20 text-accent p-1.5 rounded-md">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+                        </div>
+                        <span class="font-medium text-slate-200">${d.device_id}</span>
+                    </li>
+                `).join('');
+            }
+        } else {
+            listEl.innerHTML = '<li class="text-red-400 text-xs">Falha ao obter dispositivos do servidor.</li>';
+        }
+    } catch(e) {
+        listEl.innerHTML = '<li class="text-red-400 text-xs">Erro de ligação.</li>';
+    }
+}
 
 // Fechar modal ao clicar fora
 document.getElementById('modal-device')?.addEventListener('click', (e) => {
