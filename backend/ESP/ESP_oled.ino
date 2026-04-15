@@ -7,10 +7,11 @@
 #include <SD.h>
 #include <SPI.h>
 #include <time.h>
+#include "secrets.h"
 
 // --- Configurações de Rede (Wi-Fi) ---
-const char* ssid = "iPhone 17";
-const char* password = "Rafa4321";
+const char* ssid = SECRET_SSID;
+const char* password = SECRET_PASS;
 const char* serverName = "https://dtsd-lab-1.vercel.app/api/data";
 
 // --- Configurações NTP ---
@@ -96,6 +97,7 @@ bool enviarJSON(String json) {
   HTTPClient http;
   http.begin(serverName);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-api-key", API_SECRET_KEY); 
   int code = http.POST(json);
   http.end();
   Serial.print("HTTP Response: ");

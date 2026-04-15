@@ -111,6 +111,7 @@ bool enviarJSON(String json) {
   HTTPClient http;
   http.begin(serverName);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-api-key", API_SECRET_KEY); 
   int code = http.POST(json);
   http.end();
   Serial.print("HTTP Response: ");

@@ -26,6 +26,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 USE_SUPABASE = True
 
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY") 
+
 if USE_SUPABASE:
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -77,7 +79,10 @@ def get_user_from_token(authorization: Optional[str]) -> Optional[dict]:
         return None
 
 @app.post("/api/data")
-def receive_data(data: SensorData):
+def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
+    if x_api_key != API_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Acesso negado: Chave API invalida ou ausente")
+
     timestamp = datetime.now(timezone.utc).isoformat()
     data_dict = data.dict()
     data_dict["timestamp"] = timestamp
@@ -163,12 +168,44 @@ def register_device(body: DeviceRegister, authorization: Optional[str] = Header(
         raise HTTPException(status_code=503, detail="Supabase não disponível")
 
     try:
-        # Upsert: atualiza se já existe, cria se não
-        supabase.table("user_devices").upsert({
+        # 1. Verificar se o dispositivo já está associado a alguém
+        existing = supabase.table("user_devices").select("*").eq("device_id", body.device_id).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            owner_id = existing.data[0].get("user_id")
+            if owner_id == str(user.id):
+                raise HTTPException(status_code=400, detail="Este dispositivo já está associado à tua conta.")
+            else:
+                raise HTTPException(status_code=400, detail="Este dispositivo já se encontra registado noutra conta.")
+
+        # 2. Se não existir, associa à conta
+        novo_dispositivo = {
             "user_id": str(user.id),
             "device_id": body.device_id
-        }).execute()
-        return {"status": "ok", "user_id": str(user.id), "device_id": body.device_id}
+        }
+
+        supabase.table("user_devices").insert(novo_dispositivo).execute()
+        return {"status": "ok", "mensagem": "Dispositivo associado com sucesso!", "device_id": body.device_id}
+        
+    except HTTPException as he:
+        raise he # Mantém os erros 400 que criámos
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/devices")
+def get_my_devices(authorization: Optional[str] = Header(None)):
+    """Devolve a lista de dispositivos geridos pelo utilizador que tem o login feito"""
+    user = get_user_from_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+        
+    if not USE_SUPABASE:
+        return []
+        
+    try:
+        # Vai buscar todos os dispositivos onde o user_id é o do utilizador logado
+        resp = supabase.table("user_devices").select("*").eq("user_id", str(user.id)).execute()
+        return resp.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
