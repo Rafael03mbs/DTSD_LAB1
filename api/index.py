@@ -10,14 +10,14 @@ import hmac
 import re
 import os
 
-# [S7] Apenas carregar .env em desenvolvimento local (na Vercel, as variáveis são injetadas pelo painel)
+# Apenas carregar .env em desenvolvimento local (na Vercel, as variáveis são injetadas pelo painel)
 if os.environ.get("VERCEL") is None:
     from dotenv import load_dotenv
     load_dotenv()
 
 app = FastAPI(title="ESP32 Security Monitor API")
 
-# [C4] CORS restrito apenas aos domínios necessários
+# CORS restrito apenas aos domínios necessários
 ALLOWED_ORIGINS = [
     os.environ.get("FRONTEND_URL", "https://dtsd-security-monitor.vercel.app"),
     "http://localhost:3000",   # Dev local
@@ -41,7 +41,7 @@ USE_SUPABASE = True
 
 API_SECRET_KEY = os.environ.get("API_SECRET_KEY")
 
-# [C6] Falha imediata se a chave API não estiver configurada — previne bypass total
+# Falha imediata se a chave API não estiver configurada — previne bypass total
 if not API_SECRET_KEY:
     raise RuntimeError("FATAL: API_SECRET_KEY não está definida nas variáveis de ambiente! O servidor não pode arrancar sem esta chave.")
 
@@ -55,7 +55,7 @@ if USE_SUPABASE:
 else:
     print("[AVISO] Supabase desativado (Credenciais não configuradas). Utiliza recurso em memória para testes locais.")
 
-# [S4] Estrutura de dados do ESP32 — com validação de input
+# Estrutura de dados do ESP32 — com validação de input
 class SensorData(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=64)
     temperature: float = Field(..., ge=-50, le=80)       # DHT22
@@ -84,13 +84,13 @@ class DeviceRegister(BaseModel):
 local_data_storage = []
 local_alerts_storage = []
 
-# [A7] Rate limiter simples por device_id (protege contra DoS por instância quente)
+# Rate limiter simples por device_id (protege contra DoS por instância quente)
 _rate_limit_map = defaultdict(list)
 RATE_LIMIT_WINDOW = 60   # segundos
 RATE_LIMIT_MAX = 30      # max requests por device_id por minuto
 
+# Retorna True se o pedido deve ser rejeitado por excesso de taxa.
 def check_rate_limit(device_id: str) -> bool:
-    """Retorna True se o pedido deve ser rejeitado por excesso de taxa."""
     now = time_now()
     window = _rate_limit_map[device_id]
     _rate_limit_map[device_id] = [t for t in window if now - t < RATE_LIMIT_WINDOW]
@@ -99,12 +99,12 @@ def check_rate_limit(device_id: str) -> bool:
     _rate_limit_map[device_id].append(now)
     return False
 
-# [S3] Cache de mapeamento device_id -> user_id com TTL (reduz queries ao Supabase)
+# Cache de mapeamento device_id -> user_id com TTL (reduz queries ao Supabase)
 _device_user_cache = {}
 _cache_ttl = 300  # 5 minutos
 
+# Obtém o user_id associado a um device_id, com cache de 5 minutos.
 def get_user_id_by_device(device_id: str) -> Optional[str]:
-    """Obtém o user_id associado a um device_id, com cache de 5 minutos."""
     if not USE_SUPABASE:
         return None
 
@@ -121,8 +121,8 @@ def get_user_id_by_device(device_id: str) -> Optional[str]:
     except Exception:
         return None
 
+# Valida o token JWT do Supabase e retorna o utilizador.
 def get_user_from_token(authorization: Optional[str]) -> Optional[dict]:
-    """Valida o token JWT do Supabase e retorna o utilizador."""
     if not authorization or not authorization.startswith("Bearer "):
         return None
     token = authorization.split(" ", 1)[1]
@@ -132,13 +132,14 @@ def get_user_from_token(authorization: Optional[str]) -> Optional[dict]:
     except Exception:
         return None
 
+# Recebe dados dos sensores do ESP32, processa regras de alerta e armazena os dados na base de dados.
 @app.post("/api/data")
 def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
-    # [C2] Comparação em tempo constante para prevenir timing attacks
+    # Comparação em tempo constante para prevenir timing attacks
     if not x_api_key or not hmac.compare_digest(x_api_key, API_SECRET_KEY):
         raise HTTPException(status_code=401, detail="Acesso negado: Chave API invalida ou ausente")
 
-    # [A7] Verificar rate limit por dispositivo
+    # Verificar rate limit por dispositivo
     if check_rate_limit(data.device_id):
         raise HTTPException(status_code=429, detail="Demasiadas requisições. Tenta novamente mais tarde.")
 
@@ -216,9 +217,9 @@ def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
     return {"status": "success", "alert_triggered": alert_triggered, "alert_message": alert_message}
 
 
+# Associa um device_id ao utilizador autenticado.
 @app.post("/api/register-device")
 def register_device(body: DeviceRegister, authorization: Optional[str] = Header(None)):
-    """Associa um device_id ao utilizador autenticado."""
     user = get_user_from_token(authorization)
     if not user:
         raise HTTPException(status_code=401, detail="Não autenticado")
@@ -251,9 +252,9 @@ def register_device(body: DeviceRegister, authorization: Optional[str] = Header(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Devolve a lista de dispositivos geridos pelo utilizador que tem o login feito
 @app.get("/api/devices")
 def get_my_devices(authorization: Optional[str] = Header(None)):
-    """Devolve a lista de dispositivos geridos pelo utilizador que tem o login feito"""
     user = get_user_from_token(authorization)
     if not user:
         raise HTTPException(status_code=401, detail="Não autenticado")
@@ -268,10 +269,10 @@ def get_my_devices(authorization: Optional[str] = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# [A5] Endpoints GET agora exigem autenticação e filtram por utilizador
+# Endpoints GET agora exigem autenticação e filtram por utilizador
+# Devolve os dados de segurança filtrados pelo utilizador autenticado.
 @app.get("/api/data")
 def get_recent_data(authorization: Optional[str] = Header(None)):
-    """Devolve os dados de segurança filtrados pelo utilizador autenticado."""
     user = get_user_from_token(authorization)
     if not user:
         raise HTTPException(status_code=401, detail="Não autenticado")
@@ -291,9 +292,9 @@ def get_recent_data(authorization: Optional[str] = Header(None)):
 
     return [d for d in local_data_storage if d.get("user_id") == str(user.id)]
 
+# Devolve os alertas filtrados pelo utilizador autenticado.
 @app.get("/api/alerts")
 def get_recent_alerts(authorization: Optional[str] = Header(None)):
-    """Devolve os alertas filtrados pelo utilizador autenticado."""
     user = get_user_from_token(authorization)
     if not user:
         raise HTTPException(status_code=401, detail="Não autenticado")

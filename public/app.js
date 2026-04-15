@@ -9,18 +9,22 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const { createClient } = supabase;
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON);
 
-// [C5] Função de escape HTML para prevenir XSS
+/**
+ * Escapa caracteres HTML de uma string para prevenir ataques de Cross-Site Scripting (XSS).
+ * @param {string} text O texto original.
+ * @returns {string} O texto escapado e seguro para inserir no DOM.
+ */
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.appendChild(document.createTextNode(text));
     return div.innerHTML;
 }
 
-// [S5] Referências globais para os intervalos (para cleanup no logout)
+// Referências globais para os intervalos (para cleanup no logout)
 let pollingIntervalId = null;
 let weatherIntervalId = null;
 
-// [A2] Referência global ao gráfico Chart.js (para destroy no logout)
+// Referência global ao gráfico Chart.js (para destroy no logout)
 let sensorChart = null;
 
 // ============================================================
@@ -33,9 +37,12 @@ function showLoginScreen() {
     document.getElementById('app-main').classList.add('hidden');
 }
 
-/** Esconde o ecrã de login e mostra a app principal. */
 let currentUser = null; // Utilizador atual (global)
 
+/** 
+ * Prepara o ambiente da aplicação após o login, mostrando os dados e iniciando o dashboard. 
+ * @param {Object} user Objeto com os dados do utilizador retornados pelo Supabase.
+ */
 function showApp(user) {
     currentUser = user; // Guardar utilizador globalmente
     document.getElementById('login-screen').classList.add('hidden');
@@ -122,14 +129,14 @@ async function loginWithGoogle() {
 
 /** Termina a sessão do utilizador. */
 async function logout() {
-    // [S5] Limpar intervalos ANTES de fazer signOut para parar o polling
+    // Limpar intervalos ANTES de fazer signOut para parar o polling
     if (pollingIntervalId) { clearInterval(pollingIntervalId); pollingIntervalId = null; }
     if (weatherIntervalId) { clearInterval(weatherIntervalId); weatherIntervalId = null; }
 
-    // [A2] Destruir o gráfico para libertar memória
+    // Destruir o gráfico para libertar memória
     if (sensorChart) { sensorChart.destroy(); sensorChart = null; }
 
-    // [A3] Remover banner de sessão expirada se existir
+    // Remover banner de sessão expirada se existir
     const expiredBanner = document.getElementById('session-expired-banner');
     if (expiredBanner) expiredBanner.remove();
 
@@ -162,7 +169,7 @@ async function logout() {
 
 // ============================================================
 // GESTÃO DE SESSÃO
-// [S1] Corrigida race condition entre getSession() e onAuthStateChange()
+// Corrigida race condition entre getSession() e onAuthStateChange()
 // ============================================================
 
 let isAuthResolved = false;
@@ -330,7 +337,7 @@ async function fetchMyDevices() {
             if (devices.length === 0) {
                 listEl.innerHTML = '<li class="text-slate-500 text-xs italic">Não tens nenhum dispositivo associado.</li>';
             } else {
-                // [C5] Usar escapeHtml para prevenir XSS via device_id
+                // Usar escapeHtml para prevenir XSS via device_id
             listEl.innerHTML = devices.map(d => `
                     <li class="bg-white/5 border border-white/5 p-2 rounded-lg flex items-center gap-2">
                         <div class="bg-accent/20 text-accent p-1.5 rounded-md">
@@ -356,6 +363,12 @@ document.getElementById('modal-device')?.addEventListener('click', (e) => {
 // ============================================================
 // FUNÇÃO PRINCIPAL DO DASHBOARD (chamada após login)
 // ============================================================
+
+/**
+ * Inicializa a interface principal (Dashboard), configura os gráficos, 
+ * inicia a recolha periódica (polling) de dados, define lógica de separadores 
+ * e pede autorização de geolocalização para as recomendações de conforto.
+ */
 function initDashboard() {
     // Verificar se o dashboard já foi iniciado para evitar dupla inicialização
     if (window._dashboardInitialized) return;
@@ -363,7 +376,7 @@ function initDashboard() {
 
     const API_BASE = "/api";
 
-    // [A2] Inicializar o Chart.js (destruir anterior se existir por segurança extra)
+    // Inicializar o Chart.js (destruir anterior se existir por segurança extra)
     const ctx = document.getElementById('sensorChart').getContext('2d');
     if (sensorChart) {
         sensorChart.destroy();
@@ -433,26 +446,31 @@ function initDashboard() {
         }
     });
 
-    const MAX_CHART_POINTS = 50; // [A2] Limitar pontos para performance em sessões longas
+    const MAX_CHART_POINTS = 50; // Limitar pontos para performance em sessões longas
 
     let lastDataCount = 0;
     let lastAlertTimestamp = null;
     let lastRefreshTime = null;
     let lastDataReceivedTimestamp = 0;
     let allDataHistory = [];
-    // [A4] Carregar hideAlertsBefore por user_id para evitar conflitos multi-conta
+    // Carregar hideAlertsBefore por user_id para evitar conflitos multi-conta
     const alertStorageKey = `hideAlertsBefore_${currentUser?.id || 'anon'}`;
     let hideAlertsBefore = parseInt(localStorage.getItem(alertStorageKey)) || 0;
 
-    // [A4] Expirar automaticamente o filtro após 24h para evitar "alertas fantasma"
+    // Expirar automaticamente o filtro após 24h para evitar "alertas fantasma"
     if (hideAlertsBefore > 0 && (Date.now() - hideAlertsBefore) > 86400000) {
         hideAlertsBefore = 0;
         localStorage.removeItem(alertStorageKey);
     }
 
     let _wasOnline = true; // Rastreia o estado anterior para evitar re-renders desnecessários
-    let isFetching = false; // [A1] Guard flag contra acumulação de pedidos
+    let isFetching = false; // Guard flag contra acumulação de pedidos
 
+    /**
+     * Atualiza os indicadores visuais da UI para refletir se a ligação com o ESP32 / Backend 
+     * se encontra ativa ou não.
+     * @param {boolean} isOnline Novo estado da ligação.
+     */
     function updateConnectionStatus(isOnline) {
         const statusText = document.getElementById('status-text');
         const statusDot = document.getElementById('status-dot');
@@ -521,7 +539,10 @@ function initDashboard() {
         }
     }
 
-    // [A3] Mostra um banner fixo a informar que a sessão expirou
+    /**
+     * Instancia um banner informativo no topo da página avisando o utilizador 
+     * que a sua sessão expirou (erro de JWT) e sugere re-autenticação.
+     */
     function showSessionExpiredBanner() {
         if (document.getElementById('session-expired-banner')) return;
         const banner = document.createElement('div');
@@ -539,6 +560,10 @@ function initDashboard() {
         if (weatherIntervalId) { clearInterval(weatherIntervalId); weatherIntervalId = null; }
     }
 
+    /**
+     * Consulta a base de dados (Supabase) via API para obter os últimos dados sensoriais.
+     * Atualiza o gráfico principal, os cartões de estatísticas e as tabelas com a nova informação.
+     */
     async function fetchData() {
         try {
             if (!currentUser) return;
@@ -551,7 +576,7 @@ function initDashboard() {
                 .limit(100);
 
             if (error) {
-                // [A3] Detectar erro de autenticação específico (sessão expirada)
+                // Detectar erro de autenticação específico (sessão expirada)
                 if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
                     showSessionExpiredBanner();
                     return;
@@ -561,14 +586,14 @@ function initDashboard() {
                 return;
             }
 
-            // [A6] Marcar como online IMEDIATAMENTE após receber dados com sucesso
+            // Marcar como online IMEDIATAMENTE após receber dados com sucesso
             updateConnectionStatus(true);
 
             // Os dados vêm da API por ordem cronológica inversa
             // Precisamos da ordem cronológica normal para o gráfico
             const chronoData = [...data].reverse();
 
-            // [A2] Limitar pontos no gráfico para performance em sessões longas
+            // Limitar pontos no gráfico para performance em sessões longas
             const chartData = chronoData.length > MAX_CHART_POINTS
                 ? chronoData.slice(-MAX_CHART_POINTS)
                 : chronoData;
@@ -581,7 +606,7 @@ function initDashboard() {
             sensorChart.data.labels = labels;
             sensorChart.data.datasets[0].data = temps;
             sensorChart.data.datasets[1].data = lights;
-            sensorChart.update('none'); // [S6] Sem animação para updates em loop (performance)
+            sensorChart.update('none'); // Sem animação para updates em loop (performance)
 
             // Atualizar os Cartões de Estatísticas com os dados mais recentes
             if (data.length > 0) {
@@ -644,6 +669,10 @@ function initDashboard() {
         }
     }
 
+    /**
+     * Consulta os alertas do Supabase e renderiza-os na lista lateral de intrusões e anomalias.
+     * Aplica ainda filtros visuais com base no tempo para omitir alertas já descartados pelo utilizador.
+     */
     async function fetchAlerts() {
         try {
             if (!currentUser) return;
@@ -722,7 +751,12 @@ function initDashboard() {
     }
 
     // Obtenção inicial dos dados
-    // [A1] Polling com proteção contra acumulação de pedidos (request waterfall)
+    // Polling com proteção contra acumulação de pedidos (request waterfall)
+    /**
+     * Função orquestradora que executa em intervalos regulares. 
+     * Executa a recolha em massa de novos dados e alertas ao mesmo tempo.
+     * Possui proteções que evitam a sobrecarga se o carregamento demorar demasiado.
+     */
     async function pollDashboard() {
         if (isFetching) return; // Ignora se o pedido anterior ainda está a correr
         isFetching = true;
@@ -745,7 +779,7 @@ function initDashboard() {
     // Primeira chamada imediata
     pollDashboard();
 
-    // [S5] Guardar referência do intervalo para cleanup no logout
+    // Guardar referência do intervalo para cleanup no logout
     pollingIntervalId = setInterval(pollDashboard, 2000);
 
     // Lógica de Alternância de Separadores
@@ -796,9 +830,9 @@ function initDashboard() {
     const btnClearAlerts = document.getElementById('btn-clear-alerts');
     if (btnClearAlerts) {
         btnClearAlerts.addEventListener('click', () => {
-            // [A4] Usar o tempo atual do browser (mais fiável que o timestamp do alerta)
+            // Usar o tempo atual do browser (mais fiável que o timestamp do alerta)
             hideAlertsBefore = Date.now();
-            // [A4] Guardar por user_id para evitar conflitos multi-conta
+            // Guardar por user_id para evitar conflitos multi-conta
             localStorage.setItem(alertStorageKey, hideAlertsBefore);
 
             lastAlertTimestamp = null;
@@ -817,6 +851,10 @@ function initDashboard() {
         });
     }
 
+    /**
+     * Renderiza o histórico tabular na área "Histórico", aplicando os filtros
+     * atuais escolhidos na interface como a Data, Hora Inicial, Final e Sensor (Device ID).
+     */
     function renderHistoryTable() {
         let finalData = allDataHistory;
 
@@ -877,7 +915,7 @@ function initDashboard() {
             const d = new Date(row.timestamp);
             const timeStr = `${d.toLocaleDateString('pt-PT')} ${d.toLocaleTimeString('pt-PT')}`;
 
-            // [C5] Usar escapeHtml para prevenir XSS via device_id na tabela
+            // Usar escapeHtml para prevenir XSS via device_id na tabela
             tr.innerHTML = `
            <td class="p-4 border-b border-white/5 text-slate-300 font-medium">${timeStr}</td>
            <td class="p-4 border-b border-white/5 text-slate-400 max-w-[120px] truncate" title="${escapeHtml(row.device_id)}">${escapeHtml(row.device_id)}</td>
@@ -902,7 +940,11 @@ function initDashboard() {
     let userLat = 38.7167; // Coordenadas padrão: Lisboa
     let userLon = -9.1333; // Coordenadas padrão: Lisboa
 
-    // [S2] Geolocalização com feedback ao utilizador sobre fallback
+    /**
+     * Tenta obter as coordenadas GPS atuais de forma assistida no browser, 
+     * caso contrário usa a localização de Lisboa em formato 'fallback' 
+     * para consultar os dados meteorológicos exteriores.
+     */
     function initWeatherWithLocation() {
         if ("geolocation" in navigator) {
             const recEl = document.getElementById('weather-recommendation');
@@ -934,6 +976,10 @@ function initDashboard() {
         }
     }
 
+    /**
+     * Utiliza a API pública Open-Meteo para obter a temperatura externa, humidade e 
+     * estado pluvial nas coordenadas associadas ao dispositivo do utilizador ou padrão (Lisboa).
+     */
     async function fetchOutdoorWeather() {
         try {
             // Open-Meteo é grátis e o 'timezone=auto' descobre o teu fuso horário automaticamente pelas coordenadas dadas!
@@ -952,6 +998,11 @@ function initDashboard() {
         }
     }
 
+    /**
+     * Compara a informação obtida dos sensores internos do quarto com
+     * as informações meteorológicas do exterior obtidas pelo Open-Meteo para 
+     * formular recomendações inteligentes dinamicamente ao utilizador (ex: Abrir a janela).
+     */
     function updateRecommendation() {
         if (!currentOutdoorWeather || allDataHistory.length === 0) return;
 
@@ -1003,7 +1054,7 @@ function initDashboard() {
 
     // Inicializar meteorologia imediatamente (updateRecommendation já protege contra estado offline)
     initWeatherWithLocation();
-    // [S5] Guardar referência do intervalo de meteorologia para cleanup no logout
+    // Guardar referência do intervalo de meteorologia para cleanup no logout
     weatherIntervalId = setInterval(fetchOutdoorWeather, 300000);
 
 } // fim initDashboard()
