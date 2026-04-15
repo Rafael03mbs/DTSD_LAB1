@@ -383,7 +383,8 @@ function initDashboard() {
     let lastRefreshTime = null;
     let lastDataReceivedTimestamp = 0;
     let allDataHistory = [];
-    let hideAlertsBefore = 0; // Timestamp local a partir do qual mostramos alertas
+    // Carregar a memória do browser sobre quando foi a última vez que se limpou ecrã
+    let hideAlertsBefore = parseInt(localStorage.getItem('hideAlertsBefore')) || 0;
 
     let _wasOnline = true; // Rastreia o estado anterior para evitar re-renders desnecessários
 
@@ -695,6 +696,9 @@ function initDashboard() {
             } else {
                 hideAlertsBefore = Date.now();
             }
+            // MEMÓRIA: Guarda no próprio browser do utilizador para não aparecerem no F5
+            localStorage.setItem('hideAlertsBefore', hideAlertsBefore);
+
             lastAlertTimestamp = null;
             window.lastAlertsCount = 0;
 
