@@ -117,12 +117,19 @@ void enviarFilaDoSD() {
 
   Serial.println("A enviar fila do SD...");
 
+  // Transfere diretamente para um ficheiro temporário para nao esgotar a memoria RAM
+  File fw = SD.open("/fila_temp.csv", FILE_WRITE);
+  if (!fw) {
+    Serial.println("ERRO: Nao foi possivel criar o ficheiro temporario na fila SD.");
+    f.close();
+    return;
+  }
+
   // Processa no maximo 10 registos por ciclo para nao bloquear o loop
   const int MAX_BATCH = 10;
   int enviados = 0;
   int falhados = 0;
-  std::vector<String> porEnviar; // apenas os que falharam neste batch
-  std::vector<String> restantes; // os que nem foram tentados
+  int pendentes = 0;
 
   while (f.available()) {
     String linha = f.readStringUntil('\n');
@@ -135,29 +142,30 @@ void enviarFilaDoSD() {
         enviados++;
       } else {
         falhados++;
-        porEnviar.push_back(linha);
+        // Se falhou, salva no temporario
+        fw.println(linha);
       }
-      delay(200);
+      delay(200); // Atraso tático para nao sobrecarregar o HTTP / WiFi
     } else {
-      // Ja atingiu o limite do batch — manter para o proximo ciclo
-      restantes.push_back(linha);
+      // Se ja passou o batch, escrevemos logo sem colocar nada num vector (RAM)!
+      fw.println(linha);
+      pendentes++;
     }
   }
+  
   f.close();
+  fw.close();
 
-  // Reescrever ficheiro apenas com os falhados + restantes
+  // Substituir os ficheiros originais pelo rescaldo da execução
   SD.remove(FICHEIRO_FILA);
-  if (!porEnviar.empty() || !restantes.empty()) {
-    File fw = SD.open(FICHEIRO_FILA, FILE_WRITE);
-    if (fw) {
-      for (auto& l : porEnviar)  fw.println(l);
-      for (auto& l : restantes) fw.println(l);
-      fw.close();
-    }
-    Serial.printf("Fila SD: %d enviados, %d falhados, %d pendentes.\n",
-                  enviados, falhados, (int)restantes.size());
+
+  if (falhados > 0 || pendentes > 0) {
+    SD.rename("/fila_temp.csv", FICHEIRO_FILA); // Ficheiro assumido como nova queue
+    Serial.printf("Fila SD: %d enviados, %d falhados, %d pendentes para envio futuro.\n",
+                  enviados, falhados, pendentes);
   } else {
-    Serial.println("Fila do SD enviada com sucesso e limpa.");
+    SD.remove("/fila_temp.csv"); // Limpar o temporario vazio
+    Serial.println("Fila do SD enviada com sucesso e limpa totalmente.");
   }
 }
 
