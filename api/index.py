@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from supabase import create_client, Client
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from collections import defaultdict
 from time import time as time_now
@@ -63,6 +63,9 @@ class SensorData(BaseModel):
     light_level: float = Field(..., ge=0, le=100000)      # LDR
     distance: float = Field(..., ge=0, le=500)            # HC-SR04
     flame_detected: bool                                   # Sensor de chama
+    # Timestamp NTP enviado pelo ESP32 — usado para dados offline armazenados no SD
+    # Se ausente ou inválido, o servidor usa datetime.now(UTC) como fallback
+    timestamp: Optional[str] = None
 
     @validator('device_id')
     def validate_device_id(cls, v):
@@ -88,6 +91,9 @@ local_alerts_storage = []
 _rate_limit_map = defaultdict(list)
 RATE_LIMIT_WINDOW = 60   # segundos
 RATE_LIMIT_MAX = 30      # max requests por device_id por minuto
+
+# Estado dos alertas por dispositivo (evita enviar alertas contínuos)
+_device_alert_state = defaultdict(lambda: {"high_temp": False, "low_temp": False})
 
 # Retorna True se o pedido deve ser rejeitado por excesso de taxa.
 def check_rate_limit(device_id: str) -> bool:
@@ -143,9 +149,32 @@ def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
     if check_rate_limit(data.device_id):
         raise HTTPException(status_code=429, detail="Demasiadas requisições. Tenta novamente mais tarde.")
 
-    timestamp = datetime.now(timezone.utc).isoformat()
+    # Usar o timestamp NTP enviado pelo ESP32 se existir e for válido (formato ISO 8601).
+    # Isto é crucial para dados offline: o ESP32 guarda leituras no SD card com
+    # o timestamp real da medição. Sem isto, dados offline apareceriam todos
+    # com a hora do momento em que o WiFi reconectou.
+    esp_timestamp = data.timestamp
+    if esp_timestamp and not esp_timestamp.startswith("1970"):
+        try:
+            # Aceitar formatos: "2026-04-21T15:30:00Z" ou "2026-04-21T15:30:00+00:00"
+            parsed = datetime.fromisoformat(esp_timestamp.replace('Z', '+00:00'))
+            # Rejeitar timestamps do futuro (> 2 min) ou muito antigos (> 7 dias)
+            now_utc = datetime.now(timezone.utc)
+            if parsed > now_utc + timedelta(minutes=2):
+                timestamp = now_utc.isoformat()
+            elif (now_utc - parsed).days > 7:
+                timestamp = now_utc.isoformat()
+            else:
+                timestamp = parsed.isoformat()
+        except (ValueError, AttributeError):
+            timestamp = datetime.now(timezone.utc).isoformat()
+    else:
+        # Sem timestamp do ESP32 ou NTP falhou (1970) — usar hora do servidor
+        timestamp = datetime.now(timezone.utc).isoformat()
+
     data_dict = data.dict()
-    data_dict["timestamp"] = timestamp
+    data_dict.pop("timestamp", None)  # Remover o campo bruto do ESP32
+    data_dict["timestamp"] = timestamp  # Inserir o timestamp validado
 
     # Associar o user_id ao device_id (para isolação de dados por utilizador)
     user_id = get_user_id_by_device(data.device_id)
@@ -167,13 +196,22 @@ def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
         alert_message += f"{prefix}[INCENDIO] Chama detetada pelo Sensor!"
         
     if data.temperature > 28.0:
-        alert_triggered = True
-        prefix = " | " if alert_message else ""
-        alert_message += f"{prefix}Temperatura muito elevada ({data.temperature} C)"
-    elif data.temperature < 0.0:
-        alert_triggered = True
-        prefix = " | " if alert_message else ""
-        alert_message += f"{prefix}[FRIO EXTREMO] Temperatura muito baixa ({data.temperature} C)"
+        if not _device_alert_state[data.device_id]["high_temp"]:
+            alert_triggered = True
+            prefix = " | " if alert_message else ""
+            alert_message += f"{prefix}Temperatura muito elevada ({data.temperature} C)"
+            _device_alert_state[data.device_id]["high_temp"] = True
+    elif data.temperature < 27.0: # Hysteresis: tem de baixar dos 27 para desativar o bloqueio
+        _device_alert_state[data.device_id]["high_temp"] = False
+
+    if data.temperature < 0.0:
+        if not _device_alert_state[data.device_id]["low_temp"]:
+            alert_triggered = True
+            prefix = " | " if alert_message else ""
+            alert_message += f"{prefix}[FRIO EXTREMO] Temperatura muito baixa ({data.temperature} C)"
+            _device_alert_state[data.device_id]["low_temp"] = True
+    elif data.temperature > 1.0: # Hysteresis: tem de subir para 1 grau para desativar o bloqueio
+        _device_alert_state[data.device_id]["low_temp"] = False
 
     # Adicionar alerta à base local se existir
     if alert_triggered:

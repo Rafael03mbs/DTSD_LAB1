@@ -110,62 +110,62 @@ void enviarFilaDoSD() {
   if (!SD.exists(FICHEIRO_FILA)) return;
 
   File f = SD.open(FICHEIRO_FILA, FILE_READ);
+  // Se estiver vazio, limpa o ficheiro falso e sai para não gastar tempo
   if (!f || f.size() == 0) {
     if (f) f.close();
+    SD.remove(FICHEIRO_FILA); 
     return;
   }
 
-  Serial.println("A enviar fila do SD...");
-
-  // Transfere diretamente para um ficheiro temporário para nao esgotar a memoria RAM
+  // Usamos ficheiro temporário para reescrever o que sobrou sem esgotar a RAM
   File fw = SD.open("/fila_temp.csv", FILE_WRITE);
   if (!fw) {
-    Serial.println("ERRO: Nao foi possivel criar o ficheiro temporario na fila SD.");
     f.close();
     return;
   }
 
-  // Processa no maximo 10 registos por ciclo para nao bloquear o loop
-  const int MAX_BATCH = 10;
   int enviados = 0;
-  int falhados = 0;
-  int pendentes = 0;
+  bool abortar = false; // Se a internet estiver fraca, paramos e guardamos logo o resto
 
   while (f.available()) {
-    String linha = f.readStringUntil('\n');
-    linha.trim();
-    if (linha.length() == 0) continue;
+    if (!abortar && enviados < 2) { 
+      // Lê 1 item. Só enviamos no máximo 2 para não bloquear o ESP32 (OLED e loop)
+      String linha = f.readStringUntil('\n');
+      linha.trim();
+      if (linha.length() == 0) continue;
 
-    if (enviados + falhados < MAX_BATCH) {
-      // Tenta enviar
       if (enviarJSON(linha)) {
         enviados++;
       } else {
-        falhados++;
-        // Se falhou, salva no temporario
+        abortar = true; // Falhou, assume erro e pára de tentar o resto
         fw.println(linha);
       }
-      delay(200); // Atraso tático para nao sobrecarregar o HTTP / WiFi
     } else {
-      // Se ja passou o batch, escrevemos logo sem colocar nada num vector (RAM)!
-      fw.println(linha);
-      pendentes++;
+      // Cópia ultra-rápida do resto do ficheiro em bloco em vez de Strings linha a linha
+      uint8_t buffer[512];
+      while (f.available()) {
+        int lidos = f.read(buffer, sizeof(buffer));
+        fw.write(buffer, lidos);
+      }
+      break; // Sai do while pq o ficheiro f foi lido todo
     }
   }
   
   f.close();
   fw.close();
 
-  // Substituir os ficheiros originais pelo rescaldo da execução
+  // Deletar o antigo
   SD.remove(FICHEIRO_FILA);
 
-  if (falhados > 0 || pendentes > 0) {
-    SD.rename("/fila_temp.csv", FICHEIRO_FILA); // Ficheiro assumido como nova queue
-    Serial.printf("Fila SD: %d enviados, %d falhados, %d pendentes para envio futuro.\n",
-                  enviados, falhados, pendentes);
+  // Verifica se o temp ficou com alguma coisa lá dentro
+  File checkFile = SD.open("/fila_temp.csv", FILE_READ);
+  bool aindaTemDados = (checkFile && checkFile.size() > 0);
+  if (checkFile) checkFile.close();
+
+  if (aindaTemDados) {
+    SD.rename("/fila_temp.csv", FICHEIRO_FILA); // Ficheiro assumido como nova fila
   } else {
-    SD.remove("/fila_temp.csv"); // Limpar o temporario vazio
-    Serial.println("Fila do SD enviada com sucesso e limpa totalmente.");
+    SD.remove("/fila_temp.csv"); // Destrói vestígios se tudo foi esvaziado
   }
 }
 
@@ -261,9 +261,13 @@ void setup() {
 // ==========================================
 
 void loop() {
+  unsigned long inicioLoop = millis(); // Marcar o início do ciclo
+
   // 1. LER LUZ
   int valorADC = analogRead(pinoLDR);
-  if (valorADC == 0) valorADC = 1;
+  if (valorADC <= 0) valorADC = 1; // Prevenir divisoes por zero
+  if (valorADC >= 4095) valorADC = 4094;
+  
   float voltagemLida = valorADC * (voltagemPlaca / 4095.0);
   float resistenciaLDR = resistenciaFixa * ((voltagemPlaca / voltagemLida) - 1.0);
   float valorLux = 500.0 / (resistenciaLDR / 1000.0);
@@ -286,7 +290,7 @@ void loop() {
   if (medicoesIgnoradas < 3) {
     medicoesIgnoradas++;
     Serial.println("Cooldown...");
-    delay(3000);
+    delay(2000); // 2000 em vez de 3000 para cooldown mais liso
     return;
   }
 
@@ -307,7 +311,7 @@ void loop() {
     digitalWrite(pinoLED, LOW);
   }
 
-  // 5. OLED
+  // 5. OLED - Atualiza PRIMEIRO antes da rede para manter o ecrã instantâneo
   String ts = obterTimestamp();
   displayString = "Temp: " + String(temperatura, 1) + " C\n";
   displayString += "Hum: " + String(humidade, 1) + " %\n";
@@ -333,23 +337,27 @@ void loop() {
 
   // 7. ENVIAR PARA O SERVIDOR (se online) ou GUARDAR NO SD (se offline)
   if (WiFi.status() == WL_CONNECTED) {
-    // Tenta enviar fila de leituras offline acumuladas no SD
     enviarFilaDoSD();
 
-    // Envia a leitura atual diretamente
     if (enviarJSON(jsonPayload)) {
       Serial.println("Dados enviados com sucesso.");
     } else {
-      // Só guarda no SD se o envio falhar
       Serial.println("Falha no envio — a guardar no SD para retry.");
       guardarNoSD(jsonPayload);
     }
   } else {
-    // Sem Wi-Fi: guarda no SD para envio posterior
     Serial.println("Offline — a guardar no SD para envio posterior.");
     guardarNoSD(jsonPayload);
     WiFi.reconnect(); // Tenta reconectar em background
   }
 
-  delay(3000);
+  // 8. DELAY INTELIGENTE — desconta o tempo já gasto no loop (HTTP, SD, etc.)
+  unsigned long tempoGasto = millis() - inicioLoop;
+  long tempoRestante = 3000 - (long)tempoGasto;
+  
+  Serial.printf("Ciclo: %lums | Delay: %ldms\n", tempoGasto, tempoRestante > 0 ? tempoRestante : 0);
+  
+  if (tempoRestante > 0) {
+    delay(tempoRestante);
+  }
 }

@@ -27,7 +27,8 @@ const long  gmtOffset_sec      = 0;  // UTC
 const int   daylightOffset_sec = 0;  // Sem offset — UTC puro
 
 // --- Configurações do LCD I2C 16×2 ---
-// Endereço mais comum: 0x27 — se não funcionar, tenta 0x3F
+#define pinoSDA 6
+#define pinoSCL 7
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // --- Configurações do SD Card (SPI) ---
@@ -124,62 +125,62 @@ void enviarFilaDoSD() {
   if (!SD.exists(FICHEIRO_FILA)) return;
 
   File f = SD.open(FICHEIRO_FILA, FILE_READ);
+  // Se estiver vazio, limpa o ficheiro falso e sai para não gastar tempo
   if (!f || f.size() == 0) {
     if (f) f.close();
+    SD.remove(FICHEIRO_FILA); 
     return;
   }
 
-  Serial.println("A enviar fila do SD...");
-
-  // Transfere diretamente para um ficheiro temporário para nao esgotar a memoria RAM
+  // Usamos ficheiro temporário para reescrever o que sobrou sem esgotar a RAM
   File fw = SD.open("/fila_temp.csv", FILE_WRITE);
   if (!fw) {
-    Serial.println("ERRO: Nao foi possivel criar o ficheiro temporario na fila SD.");
     f.close();
     return;
   }
 
-  // Processa no maximo 10 registos por ciclo para nao bloquear o loop
-  const int MAX_BATCH = 10;
   int enviados = 0;
-  int falhados = 0;
-  int pendentes = 0;
+  bool abortar = false; // Se a internet estiver fraca, paramos e guardamos logo o resto
 
   while (f.available()) {
-    String linha = f.readStringUntil('\n');
-    linha.trim();
-    if (linha.length() == 0) continue;
+    if (!abortar && enviados < 2) { 
+      // Lê 1 item. Só enviamos no máximo 2 para não bloquear o ESP32 (LCD e loop)
+      String linha = f.readStringUntil('\n');
+      linha.trim();
+      if (linha.length() == 0) continue;
 
-    if (enviados + falhados < MAX_BATCH) {
-      // Tenta enviar
       if (enviarJSON(linha)) {
         enviados++;
       } else {
-        falhados++;
-        // Se falhou, salva no temporario
+        abortar = true; // Falhou, assume erro e pára de tentar o resto
         fw.println(linha);
       }
-      delay(200); // Atraso tático para nao sobrecarregar o HTTP / WiFi
     } else {
-      // Se ja passou o batch, escrevemos logo sem colocar nada num vector (RAM)!
-      fw.println(linha);
-      pendentes++;
+      // Cópia ultra-rápida do resto do ficheiro em bloco em vez de Strings linha a linha
+      uint8_t buffer[512];
+      while (f.available()) {
+        int lidos = f.read(buffer, sizeof(buffer));
+        fw.write(buffer, lidos);
+      }
+      break; // Sai do while pq o ficheiro f foi lido todo
     }
   }
   
   f.close();
   fw.close();
 
-  // Substituir os ficheiros originais pelo rescaldo da execução
+  // Deletar o antigo
   SD.remove(FICHEIRO_FILA);
 
-  if (falhados > 0 || pendentes > 0) {
-    SD.rename("/fila_temp.csv", FICHEIRO_FILA); // Ficheiro assumido como nova queue
-    Serial.printf("Fila SD: %d enviados, %d falhados, %d pendentes para envio futuro.\n",
-                  enviados, falhados, pendentes);
+  // Verifica se o temp ficou com alguma coisa lá dentro
+  File checkFile = SD.open("/fila_temp.csv", FILE_READ);
+  bool aindaTemDados = (checkFile && checkFile.size() > 0);
+  if (checkFile) checkFile.close();
+
+  if (aindaTemDados) {
+    SD.rename("/fila_temp.csv", FICHEIRO_FILA); // Ficheiro assumido como nova fila
   } else {
-    SD.remove("/fila_temp.csv"); // Limpar o temporario vazio
-    Serial.println("Fila do SD enviada com sucesso e limpa totalmente.");
+    SD.remove("/fila_temp.csv"); // Destrói vestígios se tudo foi esvaziado
   }
 }
 
@@ -196,6 +197,7 @@ void setup() {
   pinMode(pinoLED, OUTPUT);
 
   // Iniciar LCD
+  Wire.begin(pinoSDA, pinoSCL);
   lcd.init();
   lcd.backlight();
   lcdMsg("A iniciar...");
@@ -254,6 +256,8 @@ void setup() {
 // ==========================================
 
 void loop() {
+  unsigned long inicioLoop = millis(); // Marcar o início do ciclo
+
   // 1. LER LUZ
   int valorADC = analogRead(pinoLDR);
   if (valorADC == 0) valorADC = 1;
@@ -279,7 +283,7 @@ void loop() {
   if (medicoesIgnoradas < 3) {
     medicoesIgnoradas++;
     Serial.println("Cooldown...");
-    delay(3000);
+    delay(2000);
     return;
   }
 
@@ -297,15 +301,13 @@ void loop() {
     digitalWrite(pinoLED, LOW);
   }
 
-  // 5. LCD — 2 linhas de 16 caracteres
-  //    Linha 0: Temperatura e Humidade
-  //    Linha 1: Luz e Distância
+  // 5. LCD — Atualiza PRIMEIRO, antes de qualquer operação de rede
+  //    Assim o ecrã fica sempre responsivo independentemente da velocidade da internet
   char linha0[17];
   char linha1[17];
   snprintf(linha0, sizeof(linha0), "T:%4.1fC H:%3.0f%%  ", temperatura, humidade);
   snprintf(linha1, sizeof(linha1), "L:%3.0fLx D:%3.0fcm", valorLux, distancia_cm);
 
-  // Limpa o LCD 1x a cada 20 ciclos (~1 min) para evitar píxeis presos
   static int cicloLCD = 0;
   if (++cicloLCD >= 20) {
     lcd.clear();
@@ -331,23 +333,30 @@ void loop() {
 
   // 7. ENVIAR PARA O SERVIDOR (se online) ou GUARDAR NO SD (se offline)
   if (WiFi.status() == WL_CONNECTED) {
-    // Tenta enviar fila de leituras offline acumuladas no SD
     enviarFilaDoSD();
 
-    // Envia a leitura atual diretamente
     if (enviarJSON(jsonPayload)) {
       Serial.println("Dados enviados com sucesso.");
     } else {
-      // Só guarda no SD se o envio falhar
       Serial.println("Falha no envio — a guardar no SD para retry.");
       guardarNoSD(jsonPayload);
     }
   } else {
-    // Sem Wi-Fi: guarda no SD para envio posterior
     Serial.println("Offline — a guardar no SD para envio posterior.");
     guardarNoSD(jsonPayload);
-    WiFi.reconnect(); // Tenta reconectar em background
+    WiFi.reconnect();
   }
 
-  delay(3000);
+  // 8. DELAY INTELIGENTE — desconta o tempo já gasto no loop (HTTP, SD, etc.)
+  //    Objetivo: manter um ciclo total de ~3 segundos, nunca mais
+  unsigned long tempoGasto = millis() - inicioLoop;
+  long tempoRestante = 3000 - (long)tempoGasto;
+  
+  Serial.printf("Ciclo: %lums | Delay: %ldms\n", tempoGasto, tempoRestante > 0 ? tempoRestante : 0);
+  
+  if (tempoRestante > 0) {
+    delay(tempoRestante);
+  }
+  // Se tempoRestante <= 0 significa que o HTTP já demorou mais de 3s,
+  // nesse caso avança logo sem delay extra
 }
