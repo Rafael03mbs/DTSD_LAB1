@@ -85,15 +85,174 @@ String obterTimestamp() {
   return String(buf);
 }
 
+// Tenta inicializar o cartão SD com diagnóstico completo.
+// Faz até 'maxTentativas' tentativas com delay crescente entre elas.
+// Verifica tipo de cartão, tamanho, e faz um teste de escrita/leitura.
 void iniciarSD() {
+  const int maxTentativas = 3;
+  sdDisponivel = false;
+
+  Serial.println("========== DIAGNÓSTICO SD CARD ==========");
+  Serial.printf("  Pinos SPI → SCK:%d  MISO:%d  MOSI:%d  CS:%d\n", SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+
+  // Configurar pino CS como OUTPUT para garantir que o SPI funciona
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);  // Desactivar CS antes de iniciar o SPI
+
   SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  if (!SD.begin(SD_CS)) {
-    Serial.println("ERRO: Cartão SD não encontrado!");
-    sdDisponivel = false;
-    return;
+
+  // --- Tentativas de inicialização ---
+  for (int tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+    Serial.printf("  Tentativa %d/%d ...\n", tentativa, maxTentativas);
+    lcdMsg("SD Card...", tentativa == 1 ? "A verificar" : "A re-tentar");
+
+    if (SD.begin(SD_CS)) {
+      Serial.println("  SD.begin() → OK");
+
+      // --- Tipo de cartão ---
+      uint8_t tipo = SD.cardType();
+      const char* tipoNome;
+      switch (tipo) {
+        case CARD_MMC:  tipoNome = "MMC";     break;
+        case CARD_SD:   tipoNome = "SD";      break;
+        case CARD_SDHC: tipoNome = "SDHC";    break;
+        default:        tipoNome = "DESCONHECIDO"; break;
+      }
+
+      if (tipo == CARD_NONE) {
+        Serial.println("  ERRO: SD.begin() OK mas cardType = NONE");
+        Serial.println("  → O módulo SD responde mas não detecta cartão.");
+        Serial.println("  → Verifica se o cartão está bem inserido no slot.");
+        lcdMsg("SD: sem cartao!", "Insere o cartao");
+        SD.end();
+        delay(1000 * tentativa);  // delay crescente
+        continue;  // Tentar outra vez
+      }
+
+      Serial.printf("  Tipo de cartão: %s\n", tipoNome);
+
+      // --- Tamanho do cartão ---
+      uint64_t cardSize  = SD.cardSize() / (1024 * 1024);   // MB
+      uint64_t totalBytes = SD.totalBytes() / (1024 * 1024); // MB
+      uint64_t usedBytes  = SD.usedBytes()  / (1024 * 1024); // MB
+      Serial.printf("  Tamanho total: %llu MB\n", cardSize);
+      Serial.printf("  Espaço total (FS): %llu MB\n", totalBytes);
+      Serial.printf("  Espaço usado: %llu MB\n", usedBytes);
+
+      if (cardSize == 0) {
+        Serial.println("  AVISO: Tamanho = 0 MB. O cartão pode não estar formatado.");
+        lcdMsg("SD: formato?", "Formata FAT32");
+        SD.end();
+        delay(1000 * tentativa);
+        continue;
+      }
+
+      // --- Teste de escrita e leitura ---
+      Serial.println("  A fazer teste de escrita/leitura...");
+      const char* ficheiroTeste = "/_sd_test.tmp";
+      const char* dadosTeste = "SD_OK_12345";
+      bool testeOK = false;
+
+      // Escrever
+      File fw = SD.open(ficheiroTeste, FILE_WRITE);
+      if (fw) {
+        fw.print(dadosTeste);
+        fw.close();
+
+        // Ler de volta
+        File fr = SD.open(ficheiroTeste, FILE_READ);
+        if (fr) {
+          String lido = fr.readString();
+          fr.close();
+          SD.remove(ficheiroTeste);  // limpar ficheiro de teste
+
+          if (lido == dadosTeste) {
+            testeOK = true;
+            Serial.println("  Teste escrita/leitura → PASSOU ✓");
+          } else {
+            Serial.println("  ERRO: Teste leitura falhou — dados corrompidos!");
+            Serial.printf("  Esperado: '%s' | Lido: '%s'\n", dadosTeste, lido.c_str());
+          }
+        } else {
+          Serial.println("  ERRO: Conseguiu escrever mas não conseguiu ler o ficheiro de teste.");
+          SD.remove(ficheiroTeste);
+        }
+      } else {
+        Serial.println("  ERRO: Não conseguiu criar ficheiro de teste.");
+        Serial.println("  → O cartão pode estar protegido contra escrita (write-protect).");
+        Serial.println("  → Ou o sistema de ficheiros está corrompido.");
+      }
+
+      if (testeOK) {
+        sdDisponivel = true;
+        Serial.println("  ✓ Cartão SD pronto e funcional!");
+        Serial.printf("  Resumo: %s %lluMB (usado: %lluMB)\n", tipoNome, cardSize, usedBytes);
+
+        // Mostrar resumo no LCD
+        char lcdL1[17];
+        snprintf(lcdL1, sizeof(lcdL1), "SD OK %s %lluMB", tipoNome, cardSize);
+        lcdMsg(lcdL1, "");
+        delay(1500);
+
+        Serial.println("=========================================");
+        return;  // Sucesso — sair da função
+      }
+
+      // Se o teste falhou, desmontar e tentar outra vez
+      SD.end();
+      Serial.printf("  A aguardar %ds antes de tentar novamente...\n", tentativa);
+      delay(1000 * tentativa);
+
+    } else {
+      // SD.begin() falhou completamente
+      Serial.println("  SD.begin() → FALHOU");
+      Serial.println("  Possíveis causas:");
+      Serial.println("   1. Cartão SD não inserido");
+      Serial.println("   2. Pinos SPI mal ligados (verifica a fiação)");
+      Serial.println("   3. Cartão SD danificado ou incompatível");
+      Serial.println("   4. Cartão não formatado em FAT32");
+      Serial.println("   5. Problema de alimentação (3.3V insuficiente)");
+      Serial.printf("  A aguardar %ds antes de tentar novamente...\n", tentativa);
+      lcdMsg("SD: ERRO!", "Verifica fios");
+      delay(1000 * tentativa);
+    }
   }
-  sdDisponivel = true;
-  Serial.println("Cartão SD iniciado com sucesso.");
+
+  // Todas as tentativas falharam
+  Serial.println("  ✗ SD CARD INDISPONÍVEL após todas as tentativas.");
+  Serial.println("  O ESP32 vai continuar sem SD — dados offline");
+  Serial.println("  serão guardados em RAM (buffer limitado).");
+  Serial.println("=========================================");
+  lcdMsg("SD: Falhou!", "Modo sem SD");
+  delay(2000);
+}
+
+// Tenta re-inicializar o SD periodicamente se ele não está disponível.
+// Chamar esta função no loop() a cada ~30s.
+void tentarReconectarSD() {
+  if (sdDisponivel) return;  // Já está OK, não fazer nada
+
+  Serial.println("SD: A tentar re-inicializar...");
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  if (SD.begin(SD_CS)) {
+    uint8_t tipo = SD.cardType();
+    if (tipo != CARD_NONE) {
+      // Teste rápido de escrita
+      File fw = SD.open("/_sd_recheck.tmp", FILE_WRITE);
+      if (fw) {
+        fw.print("OK");
+        fw.close();
+        SD.remove("/_sd_recheck.tmp");
+        sdDisponivel = true;
+        Serial.println("SD: Re-conectado com sucesso!");
+        lcdMsg("SD recuperado!", "");
+        delay(1000);
+        return;
+      }
+    }
+    SD.end();
+  }
+  Serial.println("SD: Ainda indisponível.");
 }
 
 void guardarNoSD(String jsonPayload) {
@@ -257,6 +416,14 @@ void setup() {
 
 void loop() {
   unsigned long inicioLoop = millis(); // Marcar o início do ciclo
+
+  // 0. TENTAR RE-CONECTAR SD se indisponível (a cada ~30s = 10 ciclos de 3s)
+  static int cicloSD = 0;
+  if (!sdDisponivel && ++cicloSD >= 10) {
+    cicloSD = 0;
+    tentarReconectarSD();
+  }
+
 
   // 1. LER LUZ
   int valorADC = analogRead(pinoLDR);

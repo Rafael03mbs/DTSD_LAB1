@@ -40,6 +40,13 @@ String displayString;
 #define FICHEIRO_FILA "/fila.csv"
 bool sdDisponivel = false;
 
+// --- Buffer em RAM (fallback quando o SD card não está disponível) ---
+// Guarda até 60 leituras (~3 minutos a cada 3s) na memória do ESP32.
+// Cada JSON tem ~200 bytes → ~12KB de RAM usados no pior caso.
+#define RAM_BUFFER_MAX 60
+String ramBuffer[RAM_BUFFER_MAX];
+int ramBufferCount = 0;
+
 // --- Configurações do Fotorresistor (LDR) ---
 const int pinoLDR = 1;
 const float voltagemPlaca = 3.3;
@@ -81,15 +88,63 @@ void iniciarSD() {
   Serial.println("Cartão SD iniciado com sucesso.");
 }
 
+// Guarda dados no buffer RAM (fallback quando SD não está disponível).
+// Buffer circular: quando cheio, descarta os mais antigos.
+void guardarNoRAM(String jsonPayload) {
+  if (ramBufferCount < RAM_BUFFER_MAX) {
+    ramBuffer[ramBufferCount] = jsonPayload;
+    ramBufferCount++;
+  } else {
+    // Buffer cheio — descartar o mais antigo (shift left)
+    for (int i = 0; i < RAM_BUFFER_MAX - 1; i++) {
+      ramBuffer[i] = ramBuffer[i + 1];
+    }
+    ramBuffer[RAM_BUFFER_MAX - 1] = jsonPayload;
+  }
+  Serial.printf("Dados guardados em RAM (%d/%d).\n", ramBufferCount, RAM_BUFFER_MAX);
+}
+
+// Envia todos os dados acumulados no buffer RAM para o servidor.
+void enviarFilaDoRAM() {
+  if (ramBufferCount == 0) return;
+
+  Serial.printf("A enviar fila RAM: %d itens pendentes...\n", ramBufferCount);
+  int enviados = 0;
+
+  while (enviados < ramBufferCount && enviados < 5) {
+    if (enviarJSON(ramBuffer[enviados])) {
+      enviados++;
+    } else {
+      break;
+    }
+  }
+
+  if (enviados > 0) {
+    int restantes = ramBufferCount - enviados;
+    for (int i = 0; i < restantes; i++) {
+      ramBuffer[i] = ramBuffer[i + enviados];
+    }
+    for (int i = restantes; i < ramBufferCount; i++) {
+      ramBuffer[i] = "";
+    }
+    ramBufferCount = restantes;
+    Serial.printf("RAM: %d enviados, %d restantes.\n", enviados, ramBufferCount);
+  }
+}
+
 void guardarNoSD(String jsonPayload) {
-  if (!sdDisponivel) return;
+  if (!sdDisponivel) {
+    guardarNoRAM(jsonPayload);
+    return;
+  }
   File f = SD.open(FICHEIRO_FILA, FILE_APPEND);
   if (f) {
     f.println(jsonPayload);
     f.close();
     Serial.println("Dados guardados no SD.");
   } else {
-    Serial.println("ERRO: Não foi possível escrever no SD.");
+    Serial.println("ERRO: Escrita SD falhou — a guardar em RAM.");
+    guardarNoRAM(jsonPayload);
   }
 }
 
@@ -243,8 +298,9 @@ void setup() {
     oled.display();
     delay(2000);
 
-    // Tentar enviar fila acumulada no SD
+    // Tentar enviar filas acumuladas (SD e/ou RAM)
     enviarFilaDoSD();
+    enviarFilaDoRAM();
   } else {
     Serial.println("\nWi-Fi falhou. Modo offline.");
     oled.clearDisplay();
@@ -338,17 +394,18 @@ void loop() {
   // 7. ENVIAR PARA O SERVIDOR (se online) ou GUARDAR NO SD (se offline)
   if (WiFi.status() == WL_CONNECTED) {
     enviarFilaDoSD();
+    enviarFilaDoRAM();
 
     if (enviarJSON(jsonPayload)) {
       Serial.println("Dados enviados com sucesso.");
     } else {
-      Serial.println("Falha no envio — a guardar no SD para retry.");
+      Serial.println("Falha no envio — a guardar para retry.");
       guardarNoSD(jsonPayload);
     }
   } else {
-    Serial.println("Offline — a guardar no SD para envio posterior.");
+    Serial.println("Offline — a guardar para envio posterior.");
     guardarNoSD(jsonPayload);
-    WiFi.reconnect(); // Tenta reconectar em background
+    WiFi.reconnect();
   }
 
   // 8. DELAY INTELIGENTE — desconta o tempo já gasto no loop (HTTP, SD, etc.)
