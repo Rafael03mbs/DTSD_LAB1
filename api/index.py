@@ -200,17 +200,25 @@ def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
             alert_message = f"[ALARME DE INTRUSAO] Movimento a {data.distance}cm em {data.device_id}"
             _device_alert_state[data.device_id]["last_intrusion"] = now_ts
 
-    # 2. Regra Ambiental: Chama
-    if data.flame_detected:
+    # 2. Regra Comercial de Incêndio: Chama ou Temperatura >= 60C
+    if data.flame_detected or data.temperature >= 60.0:
         # Cooldown de 60 segundos
         if now_ts - _device_alert_state[data.device_id]["last_flame"] > 60:
             alert_triggered = True
             prefix = " | " if alert_message else ""
-            alert_message += f"{prefix}[INCENDIO] Chama detetada!"
+            
+            if data.flame_detected and data.temperature >= 60.0:
+                motivo = f"Chama + {data.temperature}C"
+            elif data.flame_detected:
+                motivo = "Sensor detetou Chama"
+            else:
+                motivo = f"Temperatura Crítica de {data.temperature}C"
+                
+            alert_message += f"{prefix}[INCENDIO] Risco desastroso! ({motivo})"
             _device_alert_state[data.device_id]["last_flame"] = now_ts
         
     # 3. Temperatura (Hysteresis - Threshold bloqueante)
-    if data.temperature > 28.0:
+    if 28.0 < data.temperature < 60.0:
         if not _device_alert_state[data.device_id]["high_temp"]:
             alert_triggered = True
             prefix = " | " if alert_message else ""
