@@ -93,7 +93,14 @@ RATE_LIMIT_WINDOW = 60   # segundos
 RATE_LIMIT_MAX = 120     # max requests por device_id por minuto (aumentado para suportar fila offline)
 
 # Estado dos alertas por dispositivo (evita enviar alertas contínuos)
-_device_alert_state = defaultdict(lambda: {"high_temp": False, "low_temp": False})
+_device_alert_state = defaultdict(lambda: {
+    "high_temp": False, 
+    "low_temp": False,
+    "high_hum": False,
+    "low_hum": False,
+    "last_intrusion": 0,
+    "last_flame": 0
+})
 
 # Retorna True se o pedido deve ser rejeitado por excesso de taxa.
 def check_rate_limit(device_id: str) -> bool:
@@ -183,35 +190,62 @@ def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
 
     alert_triggered = False
     alert_message = ""
+    now_ts = time_now()
 
-    # 1. Regra de Intrusão: Distância < 50cm (alguém passou perto)
+    # 1. Regra de Intrusão: Distância < 50cm
     if data.distance < 50.0:
-        alert_triggered = True
-        alert_message = f"[ALARME DE INTRUSAO] Movimento/Objeto detetado a {data.distance}cm no dispositivo {data.device_id}"
+        # Cooldown de 60 segundos para não spammar
+        if now_ts - _device_alert_state[data.device_id]["last_intrusion"] > 60:
+            alert_triggered = True
+            alert_message = f"[ALARME DE INTRUSAO] Movimento a {data.distance}cm em {data.device_id}"
+            _device_alert_state[data.device_id]["last_intrusion"] = now_ts
 
-    # 2. Regra Ambiental: Temperatura Extrema ou Chama
+    # 2. Regra Ambiental: Chama
     if data.flame_detected:
-        alert_triggered = True
-        prefix = " | " if alert_message else ""
-        alert_message += f"{prefix}[INCENDIO] Chama detetada pelo Sensor!"
+        # Cooldown de 60 segundos
+        if now_ts - _device_alert_state[data.device_id]["last_flame"] > 60:
+            alert_triggered = True
+            prefix = " | " if alert_message else ""
+            alert_message += f"{prefix}[INCENDIO] Chama detetada!"
+            _device_alert_state[data.device_id]["last_flame"] = now_ts
         
+    # 3. Temperatura (Hysteresis - Threshold bloqueante)
     if data.temperature > 28.0:
         if not _device_alert_state[data.device_id]["high_temp"]:
             alert_triggered = True
             prefix = " | " if alert_message else ""
-            alert_message += f"{prefix}Temperatura muito elevada ({data.temperature} C)"
+            alert_message += f"{prefix}Temperatura muito alta ({data.temperature}C)"
             _device_alert_state[data.device_id]["high_temp"] = True
-    elif data.temperature < 27.0: # Hysteresis: tem de baixar dos 27 para desativar o bloqueio
+    elif data.temperature < 27.0:
         _device_alert_state[data.device_id]["high_temp"] = False
 
     if data.temperature < 0.0:
         if not _device_alert_state[data.device_id]["low_temp"]:
             alert_triggered = True
             prefix = " | " if alert_message else ""
-            alert_message += f"{prefix}[FRIO EXTREMO] Temperatura muito baixa ({data.temperature} C)"
+            alert_message += f"{prefix}Frio extremo ({data.temperature}C)"
             _device_alert_state[data.device_id]["low_temp"] = True
-    elif data.temperature > 1.0: # Hysteresis: tem de subir para 1 grau para desativar o bloqueio
+    elif data.temperature > 1.0:
         _device_alert_state[data.device_id]["low_temp"] = False
+
+    # 4. Humidade (Hysteresis - Threshold bloqueante)
+    if data.humidity > 70.0:
+        if not _device_alert_state[data.device_id]["high_hum"]:
+            alert_triggered = True
+            prefix = " | " if alert_message else ""
+            alert_message += f"{prefix}Humidade muito alta ({data.humidity}%)"
+            _device_alert_state[data.device_id]["high_hum"] = True
+    elif data.humidity < 65.0:
+        _device_alert_state[data.device_id]["high_hum"] = False
+
+    if data.humidity < 30.0:
+        if not _device_alert_state[data.device_id]["low_hum"]:
+            alert_triggered = True
+            prefix = " | " if alert_message else ""
+            alert_message += f"{prefix}Tempo muito seco ({data.humidity}%)"
+            _device_alert_state[data.device_id]["low_hum"] = True
+    elif data.humidity > 35.0:
+        _device_alert_state[data.device_id]["low_hum"] = False
 
     # Adicionar alerta à base local se existir
     if alert_triggered:

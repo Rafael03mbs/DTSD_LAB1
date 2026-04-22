@@ -82,10 +82,29 @@ void lcdMsg(const char* msg1, const char* msg2 = "") {
 // ==========================================
 
 String obterTimestamp() {
+  static time_t ultima_hora_valida = 0;
+  static uint32_t ultimo_millis = 0;
+
+  time_t now;
+  time(&now);
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    return "1970-01-01T00:00:00Z"; // fallback se NTP falhar
+  gmtime_r(&now, &timeinfo); // UTC
+
+  if (timeinfo.tm_year >= (2020 - 1900)) {
+    // Relógio do sistema está correto
+    ultima_hora_valida = now;
+    ultimo_millis = millis();
+  } else {
+    // O sistema perdeu a hora (WiFi drop resetou o NTP internalmente)
+    if (ultima_hora_valida > 0) {
+      // Calcular a hora com base no tempo que passou desde a última hora boa
+      now = ultima_hora_valida + ((millis() - ultimo_millis) / 1000);
+      gmtime_r(&now, &timeinfo);
+    } else {
+      return "1970-01-01T00:00:00Z";
+    }
   }
+
   char buf[25];
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
   return String(buf);
@@ -326,8 +345,8 @@ void enviarFilaDoSD() {
   bool abortar = false; // Se a internet estiver fraca, paramos e guardamos logo o resto
 
   while (f.available()) {
-    if (!abortar && enviados < 2) { 
-      // Lê 1 item. Só enviamos no máximo 2 para não bloquear o ESP32 (LCD e loop)
+    if (!abortar && enviados < 10) { 
+      // Lemos até 10 itens por ciclo para esvaziar a fila 5x mais rápido!
       String linha = f.readStringUntil('\n');
       linha.trim();
       if (linha.length() == 0) continue;
@@ -336,21 +355,19 @@ void enviarFilaDoSD() {
       if (code >= 200 && code < 300) {
         enviados++;
       } else if (code >= 400 && code < 500 && code != 429) {
-        // Erro fatal de validação no backend (ex: 422, 400). A linha está corrompida.
-        // DESCARTAMOS esta linha e não abortamos a fila, caso contrário bloqueava o SD para sempre!
         Serial.println("Erro 4xx nesta linha do SD. A descartar.");
       } else {
-        abortar = true; // Erro de rede ou sobrecarga (429, 500). Abortar para tentar mais tarde.
+        abortar = true; 
         fw.println(linha);
       }
     } else {
-      // Cópia ultra-rápida do resto do ficheiro em bloco em vez de Strings linha a linha
+      // Cópia ultra-rápida em bloco do restante
       uint8_t buffer[512];
       while (f.available()) {
         int lidos = f.read(buffer, sizeof(buffer));
         fw.write(buffer, lidos);
       }
-      break; // Sai do while pq o ficheiro f foi lido todo
+      break; 
     }
   }
   
