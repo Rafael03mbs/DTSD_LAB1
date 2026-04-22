@@ -61,7 +61,7 @@ class SensorData(BaseModel):
     temperature: float = Field(..., ge=-50, le=80)       # DHT22
     humidity: float = Field(..., ge=0, le=100)            # DHT22
     light_level: float = Field(..., ge=0, le=100000)      # LDR
-    distance: float = Field(..., ge=0, le=500)            # HC-SR04
+    distance: float = Field(..., ge=0, le=20000)          # HC-SR04 (timeout pode dar valores altos)
     flame_detected: bool                                   # Sensor de chama
     # Timestamp NTP enviado pelo ESP32 — usado para dados offline armazenados no SD
     # Se ausente ou inválido, o servidor usa datetime.now(UTC) como fallback
@@ -90,7 +90,7 @@ local_alerts_storage = []
 # Rate limiter simples por device_id (protege contra DoS por instância quente)
 _rate_limit_map = defaultdict(list)
 RATE_LIMIT_WINDOW = 60   # segundos
-RATE_LIMIT_MAX = 30      # max requests por device_id por minuto
+RATE_LIMIT_MAX = 120     # max requests por device_id por minuto (aumentado para suportar fila offline)
 
 # Estado dos alertas por dispositivo (evita enviar alertas contínuos)
 _device_alert_state = defaultdict(lambda: {"high_temp": False, "low_temp": False})

@@ -8,6 +8,7 @@
 #include <Wire.h>
 #include <DHT.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <SD.h>
 #include <SPI.h>
@@ -25,6 +26,8 @@ const char* serverName = "https://dtsd-lab-1.vercel.app/api/data";
 const char* ntpServer          = "pool.ntp.org";
 const long  gmtOffset_sec      = 0;  // UTC
 const int   daylightOffset_sec = 0;  // Sem offset — UTC puro
+
+int flag = 0;
 
 // --- Configurações do LCD I2C 16×2 ---
 #define pinoSDA 6
@@ -54,6 +57,9 @@ const int pinoEcho = 2;
 
 // --- Configurações do LED ---
 const int pinoLED = 12;
+
+//----- Configuracao do Buzzer--------
+const int pinoBuzzer = 5;
 
 // ==========================================
 // FUNÇÕES AUXILIARES — LCD
@@ -267,16 +273,34 @@ void guardarNoSD(String jsonPayload) {
   }
 }
 
-bool enviarJSON(String json) {
+WiFiClientSecure client;
+bool clientConfigured = false;
+
+int enviarJSON(String json) {
+  if (!clientConfigured) {
+    client.setInsecure(); // Necessário para ignorar verificação de certificados em HTTPS
+    clientConfigured = true;
+  }
+  
   HTTPClient http;
-  http.begin(serverName);
+  http.setTimeout(10000); // 10s de timeout máximo
+  // Define que vamos reusar as conexões TCP (Keep-Alive) se possível para acelerar o TLS
+  http.setReuse(true); 
+  
+  http.begin(client, serverName);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-api-key", API_SECRET_KEY); 
+  
   int code = http.POST(json);
+  
+  if (code < 0) {
+    Serial.printf("Erro HTTP: %s\n", http.errorToString(code).c_str());
+  } else {
+    Serial.printf("HTTP Response: %d\n", code);
+  }
+  
   http.end();
-  Serial.print("HTTP Response: ");
-  Serial.println(code);
-  return (code >= 200 && code < 300);
+  return code;
 }
 
 void enviarFilaDoSD() {
@@ -308,10 +332,15 @@ void enviarFilaDoSD() {
       linha.trim();
       if (linha.length() == 0) continue;
 
-      if (enviarJSON(linha)) {
+      int code = enviarJSON(linha);
+      if (code >= 200 && code < 300) {
         enviados++;
+      } else if (code >= 400 && code < 500 && code != 429) {
+        // Erro fatal de validação no backend (ex: 422, 400). A linha está corrompida.
+        // DESCARTAMOS esta linha e não abortamos a fila, caso contrário bloqueava o SD para sempre!
+        Serial.println("Erro 4xx nesta linha do SD. A descartar.");
       } else {
-        abortar = true; // Falhou, assume erro e pára de tentar o resto
+        abortar = true; // Erro de rede ou sobrecarga (429, 500). Abortar para tentar mais tarde.
         fw.println(linha);
       }
     } else {
@@ -355,6 +384,9 @@ void setup() {
   pinMode(pinoEcho, INPUT);
   pinMode(pinoLED, OUTPUT);
 
+  //Iniciar Buzzer
+  pinMode(pinoBuzzer, OUTPUT);
+  
   // Iniciar LCD
   Wire.begin(pinoSDA, pinoSCL);
   lcd.init();
@@ -367,6 +399,9 @@ void setup() {
 
   // Ligar ao Wi-Fi
   lcdMsg("A ligar Wi-Fi..");
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false); // Desativa o modo de poupança de energia do Wi-Fi (evita quedas)
+  WiFi.setAutoReconnect(true); // O ESP tenta reconectar automaticamente se cair
   WiFi.begin(ssid, password);
   int tentativas = 0;
   while (WiFi.status() != WL_CONNECTED && tentativas < 20) {
@@ -417,20 +452,26 @@ void setup() {
 void loop() {
   unsigned long inicioLoop = millis(); // Marcar o início do ciclo
 
-  // 0. TENTAR RE-CONECTAR SD se indisponível (a cada ~30s = 10 ciclos de 3s)
+  // 0. TENTAR RE-CONECTAR SD se indisponível (a cada ~30s = 2 ciclos de 3s)
   static int cicloSD = 0;
-  if (!sdDisponivel && ++cicloSD >= 10) {
+  if (!sdDisponivel && ++cicloSD >= 2) {
     cicloSD = 0;
     tentarReconectarSD();
   }
+  
+  
 
-
+  
   // 1. LER LUZ
   int valorADC = analogRead(pinoLDR);
   if (valorADC == 0) valorADC = 1;
-  float voltagemLida  = valorADC * (voltagemPlaca / 4095.0);
+  float voltagemLida   = valorADC * (voltagemPlaca / 4095.0);
   float resistenciaLDR = resistenciaFixa * ((voltagemPlaca / voltagemLida) - 1.0);
-  float valorLux      = 500.0 / (resistenciaLDR / 1000.0);
+  
+  // Fator empírico para corrigir os valores excessivamente baixos (ex: ~14 no quarto)
+  // Ajusta este valor para cima ou para baixo conforme precisares!
+  float fatorCalibracao = 15.0; 
+  float valorLux        = (500.0 / (resistenciaLDR / 1000.0)) * fatorCalibracao;
 
   // 2. LER DISTÂNCIA
   digitalWrite(pinoTrig, LOW);
@@ -445,35 +486,26 @@ void loop() {
   float humidade    = dht.readHumidity();
   float temperatura = dht.readTemperature();
 
-  // Cooldown das primeiras medições
-  static int medicoesIgnoradas = 0;
-  if (medicoesIgnoradas < 3) {
-    medicoesIgnoradas++;
-    Serial.println("Cooldown...");
-    delay(2000);
-    return;
-  }
-
-  if (isnan(temperatura) || isnan(humidade)) {
-    Serial.println("Aviso: Falha DHT22.");
-    lcdMsg("Erro no DHT22!", "A tentar...");
-    delay(2000);
-    return;
-  }
-
-  // 4. LED
-  if ((valorLux < 500) || (distancia_cm < 50)) {
-    digitalWrite(pinoLED, HIGH);
+  // 4. LED (atualizar sempre, mesmo em cooldown)
+  if ((distancia_cm < 50)) {
+    digitalWrite(pinoBuzzer, HIGH);
   } else {
-    digitalWrite(pinoLED, LOW);
+    digitalWrite(pinoBuzzer, LOW);
   }
 
-  // 5. LCD — Atualiza PRIMEIRO, antes de qualquer operação de rede
-  //    Assim o ecrã fica sempre responsivo independentemente da velocidade da internet
+  // 5. LCD — Atualiza SEMPRE, antes de qualquer verificação
+  //    Assim o ecrã nunca fica "preso" no ecrã de Wi-Fi ou cooldown
   char linha0[17];
   char linha1[17];
-  snprintf(linha0, sizeof(linha0), "T:%4.1fC H:%3.0f%%  ", temperatura, humidade);
-  snprintf(linha1, sizeof(linha1), "L:%3.0fLx D:%3.0fcm", valorLux, distancia_cm);
+
+  if (isnan(temperatura) || isnan(humidade)) {
+    // Se DHT falhou, mostrar o que temos (luz e distância)
+    snprintf(linha0, sizeof(linha0), "DHT22: erro!    ");
+    snprintf(linha1, sizeof(linha1), "L:%3.0fLx D:%3.0fcm", valorLux, distancia_cm);
+  } else {
+    snprintf(linha0, sizeof(linha0), "T:%4.1fC H:%3.0f%%  ", temperatura, humidade);
+    snprintf(linha1, sizeof(linha1), "L:%3.0fLx D:%3.0fcm", valorLux, distancia_cm);
+  }
 
   static int cicloLCD = 0;
   if (++cicloLCD >= 20) {
@@ -485,6 +517,22 @@ void loop() {
   lcd.print(linha0);
   lcd.setCursor(0, 1);
   lcd.print(linha1);
+
+  // Cooldown das primeiras medições (LCD já foi atualizado acima!)
+  static int medicoesIgnoradas = 0;
+  if (medicoesIgnoradas < 3) {
+    medicoesIgnoradas++;
+    Serial.printf("Cooldown %d/3...\n", medicoesIgnoradas);
+    delay(2000);
+    return;
+  }
+
+  // Se o DHT falhou, não enviar dados mas o LCD já mostra o erro
+  if (isnan(temperatura) || isnan(humidade)) {
+    Serial.println("Aviso: Falha DHT22.");
+    delay(2000);
+    return;
+  }
 
   // 6. CONSTRUIR JSON (com timestamp NTP)
   String ts = obterTimestamp();
@@ -502,7 +550,8 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     enviarFilaDoSD();
 
-    if (enviarJSON(jsonPayload)) {
+    int responseCode = enviarJSON(jsonPayload);
+    if (responseCode >= 200 && responseCode < 300) {
       Serial.println("Dados enviados com sucesso.");
     } else {
       Serial.println("Falha no envio — a guardar no SD para retry.");
@@ -511,13 +560,13 @@ void loop() {
   } else {
     Serial.println("Offline — a guardar no SD para envio posterior.");
     guardarNoSD(jsonPayload);
-    WiFi.reconnect();
-  }
+
+    }
 
   // 8. DELAY INTELIGENTE — desconta o tempo já gasto no loop (HTTP, SD, etc.)
-  //    Objetivo: manter um ciclo total de ~3 segundos, nunca mais
+  //    Objetivo: manter um ciclo total de ~2 segundos, nunca mais
   unsigned long tempoGasto = millis() - inicioLoop;
-  long tempoRestante = 3000 - (long)tempoGasto;
+  long tempoRestante = 2000 - (long)tempoGasto;
   
   Serial.printf("Ciclo: %lums | Delay: %ldms\n", tempoGasto, tempoRestante > 0 ? tempoRestante : 0);
   
