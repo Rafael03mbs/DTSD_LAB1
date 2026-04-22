@@ -496,8 +496,20 @@ void loop() {
   digitalWrite(pinoTrig, HIGH);
   delayMicroseconds(10);
   digitalWrite(pinoTrig, LOW);
-  long  duracao     = pulseIn(pinoEcho, HIGH);
-  float distancia_cm = duracao * 0.034 / 2;
+  // Timeout de 20000 microsegundos (~20ms) equivale a um teto máximo de ~3.4 metros.
+  // Alguns clones do HC-SR04 deixam o pino em HIGH até 70ms se não houver obstáculo,
+  // causando falsas leituras de 1195cm e lentidão no código.
+  long duracao = pulseIn(pinoEcho, HIGH, 20000);
+  float distancia_cm;
+  
+  if (duracao == 0) {
+    distancia_cm = 300.0; // Se não viu nada (timeout), cap nos 3 metros
+  } else {
+    distancia_cm = duracao * 0.034 / 2.0;
+    if (distancia_cm > 300.0) {
+      distancia_cm = 300.0; // Cortar se exceder os 3m
+    }
+  }
 
   // 3. LER TEMPERATURA E HUMIDADE
   float humidade    = dht.readHumidity();
