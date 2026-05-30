@@ -147,6 +147,7 @@
         <nav class="flex flex-wrap gap-2 sm:gap-4 mb-6">
             <button id="tab-btn-dashboard" class="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)] text-sm sm:text-base">Resumo</button>
             <button id="tab-btn-history" class="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base">Histórico de Dados</button>
+            <button id="tab-btn-simulator" class="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base">Simulador Virtual</button>
         </nav>
 
         <!-- Vista: Resumo -->
@@ -325,6 +326,129 @@
                 </div>
             </div>
         </div> <!-- Fim Vista Histórico -->
+
+        <!-- Vista: Simulador Virtual -->
+        <div id="view-simulator" class="hidden animate-fadeIn">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <!-- Painel de Controlo do Simulador -->
+                <div class="glass-panel p-6 rounded-2xl shine relative">
+                    <h3 class="text-lg font-semibold mb-2 flex items-center text-accent">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                        </svg>
+                        Controlos do Simulador Virtual
+                    </h3>
+                    <p class="text-slate-400 text-xs sm:text-sm mb-6">Simule o comportamento dos sensores físicos em tempo real e veja os alertas e o painel a reagir.</p>
+
+                    <!-- Seletor de Dispositivo -->
+                    <div class="mb-5">
+                        <label class="block text-xs text-slate-400 mb-2">Dispositivo a Simular</label>
+                        <select id="sim-device-select" class="w-full bg-dark/50 border border-white/10 rounded-xl p-3 text-sm text-slate-200 focus:outline-none focus:border-accent">
+                            <!-- Preenchido via JS -->
+                        </select>
+                        <p class="text-slate-500 text-[11px] mt-1.5">⚠️ Se não encontrar dispositivos, associe um primeiro no botão "Dispositivo" no topo.</p>
+                    </div>
+
+                    <!-- Sliders dos Sensores -->
+                    <div class="space-y-5">
+                        <!-- Temperatura -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs text-slate-300 font-medium">Temperatura: <span id="val-sim-temp" class="text-blue-400 font-bold">22.0</span> °C</label>
+                                <span class="text-[10px] text-slate-500">Faixa: -20°C a 70°C</span>
+                            </div>
+                            <input type="range" id="sim-temp" min="-20" max="70" step="0.5" value="22" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                        </div>
+
+                        <!-- Humidade -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs text-slate-300 font-medium">Humidade: <span id="val-sim-hum" class="text-cyan-400 font-bold">50.0</span> %</label>
+                                <span class="text-[10px] text-slate-500">Faixa: 0% a 100%</span>
+                            </div>
+                            <input type="range" id="sim-hum" min="0" max="100" step="1" value="50" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+                        </div>
+
+                        <!-- Luminosidade -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs text-slate-300 font-medium">Luminosidade: <span id="val-sim-light" class="text-yellow-500 font-bold">500</span> lx</label>
+                                <span class="text-[10px] text-slate-500">Faixa: 0 lx a 2000 lx</span>
+                            </div>
+                            <input type="range" id="sim-light" min="0" max="2000" step="10" value="500" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500">
+                        </div>
+
+                        <!-- Distância -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs text-slate-300 font-medium">Distância (Intrusão): <span id="val-sim-dist" class="text-green-400 font-bold">150</span> cm</label>
+                                <span class="text-[10px] text-slate-500">Valores &lt; 50cm disparam Intrusão</span>
+                            </div>
+                            <input type="range" id="sim-dist" min="5" max="300" step="5" value="150" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-green-500">
+                        </div>
+
+                        <!-- Sensor de Chama (Checkbox) -->
+                        <div class="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl">
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-200 font-semibold">Sensor de Chama (Fogo)</span>
+                                <span class="text-[10px] text-slate-400">Ative para forçar alarme imediato de Incêndio</span>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="sim-flame" class="sr-only peer">
+                                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Botões de Ação -->
+                    <div class="mt-8 flex flex-col sm:flex-row gap-3">
+                        <button id="btn-sim-send" class="flex-1 bg-accent/20 hover:bg-accent/30 text-accent font-semibold py-3 px-4 rounded-xl transition-all border border-accent/30 flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                            Enviar Leitura Única
+                        </button>
+                        <button id="btn-sim-auto" class="flex-1 bg-white/5 hover:bg-white/10 text-white font-semibold py-3 px-4 rounded-xl transition-all border border-white/10 flex items-center justify-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-slate-500 shrink-0" id="sim-auto-dot"></span>
+                            <span id="btn-sim-auto-text">Iniciar Transmissão Automática</span>
+                        </button>
+                    </div>
+                    <div id="sim-status" class="text-xs mt-4 text-center hidden"></div>
+                </div>
+
+                <!-- Guia Informativo do Simulador -->
+                <div class="glass-panel p-6 rounded-2xl flex flex-col justify-between relative overflow-hidden group">
+                    <div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent opacity-50"></div>
+                    <div class="relative z-10">
+                        <h3 class="text-lg font-semibold mb-4 flex items-center text-purple-400">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                            Como testar o sistema?
+                        </h3>
+                        
+                        <div class="space-y-4 text-sm text-slate-300">
+                            <p>Este painel virtual simula um microcontrolador <strong>ESP32</strong> real ligado à internet. Ao enviar dados, o backend avalia regras de segurança em tempo real:</p>
+                            
+                            <ul class="list-disc list-inside space-y-2 pl-2 text-slate-400">
+                                <li><strong class="text-slate-300">Alerta de Intrusão:</strong> Defina o slider de distância para menos de <span class="text-orange-400 font-semibold">50 cm</span> para simular um intruso aproximando-se do sensor de ultrassons.</li>
+                                <li><strong class="text-slate-300">Alerta de Incêndio:</strong> Ligue o comutador de chama ou suba a temperatura para mais de <span class="text-red-400 font-semibold">60°C</span>.</li>
+                                <li><strong class="text-slate-300">Temperatura e Humidade:</strong> Varie os valores para ver os alertas de calor/frio extremo ou humidade, e veja as sugestões dinâmicas do <strong>Assistente de Conforto</strong> mudar no cabeçalho do Dashboard.</li>
+                            </ul>
+                            
+                            <p class="mt-4 text-xs bg-dark/40 border border-white/5 p-3 rounded-xl leading-relaxed text-slate-400">
+                                ⏱️ A **Transmissão Automática** envia uma nova leitura simulada a cada 3 segundos, imitando o comportamento em tempo real do circuito real do ESP32 com ligeiras variações aleatórias ("Random Walk").
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-8 pt-5 border-t border-white/10 flex justify-between items-center text-xs text-slate-500">
+                        <span>Simulação Segura com JWT</span>
+                        <span>v1.2 (Virtual)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
 
     </div>
 

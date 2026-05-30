@@ -23,6 +23,7 @@ function escapeHtml(text) {
 // Referências globais para os intervalos (para cleanup no logout)
 let pollingIntervalId = null;
 let weatherIntervalId = null;
+let simIntervalId = null;
 
 // Referência global ao gráfico Chart.js (para destroy no logout)
 let sensorChart = null;
@@ -132,6 +133,7 @@ async function logout() {
     // Limpar intervalos ANTES de fazer signOut para parar o polling
     if (pollingIntervalId) { clearInterval(pollingIntervalId); pollingIntervalId = null; }
     if (weatherIntervalId) { clearInterval(weatherIntervalId); weatherIntervalId = null; }
+    if (simIntervalId) { clearInterval(simIntervalId); simIntervalId = null; }
 
     // Destruir o gráfico para libertar memória
     if (sensorChart) { sensorChart.destroy(); sensorChart = null; }
@@ -315,16 +317,21 @@ document.getElementById('btn-register-device')?.addEventListener('click', openDe
 document.getElementById('btn-close-device-modal')?.addEventListener('click', closeDeviceModal);
 document.getElementById('btn-save-device')?.addEventListener('click', saveDeviceRegistration);
 
-/** Obtém e desenha a lista de dispositivos no modal. */
+/** Obtém e desenha a lista de dispositivos no modal e no seletor de simulação. */
 async function fetchMyDevices() {
     const listEl = document.getElementById('my-devices-list');
+    const simSelectEl = document.getElementById('sim-device-select');
     if (!listEl) return;
     
     listEl.innerHTML = '<li class="text-slate-500 text-xs italic">A carregar...</li>';
+    if (simSelectEl) {
+        simSelectEl.innerHTML = '<option value="">A carregar dispositivos...</option>';
+    }
 
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) {
         listEl.innerHTML = '<li class="text-red-400 text-xs">Erro: Sem sessão iniciada.</li>';
+        if (simSelectEl) simSelectEl.innerHTML = '<option value="">Erro de sessão</option>';
         return;
     }
 
@@ -336,9 +343,12 @@ async function fetchMyDevices() {
             const devices = await res.json();
             if (devices.length === 0) {
                 listEl.innerHTML = '<li class="text-slate-500 text-xs italic">Não tens nenhum dispositivo associado.</li>';
+                if (simSelectEl) {
+                    simSelectEl.innerHTML = '<option value="">Nenhum dispositivo registado</option>';
+                }
             } else {
                 // Usar escapeHtml para prevenir XSS via device_id
-            listEl.innerHTML = devices.map(d => `
+                listEl.innerHTML = devices.map(d => `
                     <li class="bg-white/5 border border-white/5 p-2 rounded-lg flex items-center gap-2">
                         <div class="bg-accent/20 text-accent p-1.5 rounded-md">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
@@ -346,12 +356,20 @@ async function fetchMyDevices() {
                         <span class="font-medium text-slate-200">${escapeHtml(d.device_id)}</span>
                     </li>
                 `).join('');
+
+                if (simSelectEl) {
+                    simSelectEl.innerHTML = devices.map(d => `
+                        <option value="${escapeHtml(d.device_id)}">${escapeHtml(d.device_id)}</option>
+                    `).join('');
+                }
             }
         } else {
             listEl.innerHTML = '<li class="text-red-400 text-xs">Falha ao obter dispositivos do servidor.</li>';
+            if (simSelectEl) simSelectEl.innerHTML = '<option value="">Erro ao carregar</option>';
         }
     } catch(e) {
         listEl.innerHTML = '<li class="text-red-400 text-xs">Erro de ligação.</li>';
+        if (simSelectEl) simSelectEl.innerHTML = '<option value="">Erro de ligação</option>';
     }
 }
 
@@ -782,31 +800,260 @@ function initDashboard() {
     // Guardar referência do intervalo para cleanup no logout
     pollingIntervalId = setInterval(pollDashboard, 2000);
 
-    // Lógica de Alternância de Separadores
-    // NOTA: Executado diretamente (não precisa de DOMContentLoaded pois o initDashboard()
-    // só é chamado APÓS o login, quando o DOM já está 100% carregado)
-    const btnDashboard = document.getElementById('tab-btn-dashboard');
-    const btnHistory = document.getElementById('tab-btn-history');
-    const viewDashboard = document.getElementById('view-dashboard');
-    const viewHistory = document.getElementById('view-history');
+    // Lógica de Alternância de Separadores (Suporta Dashboard, Histórico e Simulador)
+    const tabs = [
+        { btn: document.getElementById('tab-btn-dashboard'), view: document.getElementById('view-dashboard') },
+        { btn: document.getElementById('tab-btn-history'), view: document.getElementById('view-history') },
+        { btn: document.getElementById('tab-btn-simulator'), view: document.getElementById('view-simulator') }
+    ];
 
-    if (btnDashboard) {
-        btnDashboard.addEventListener('click', () => {
-            viewDashboard.classList.remove('hidden');
-            viewHistory.classList.add('hidden');
-            btnDashboard.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)] text-sm sm:text-base";
-            btnHistory.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base";
+    tabs.forEach(t => {
+        if (t.btn && t.view) {
+            t.btn.addEventListener('click', () => {
+                tabs.forEach(item => {
+                    if (item.btn && item.view) {
+                        if (item === t) {
+                            item.view.classList.remove('hidden');
+                            item.btn.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)] text-sm sm:text-base";
+                        } else {
+                            item.view.classList.add('hidden');
+                            item.btn.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base";
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    // ==========================================
+    // LÓGICA DO SIMULADOR VIRTUAL DE SENSORES
+    // ==========================================
+    
+    // 1. Atualizar valores dinâmicos dos sliders no ecrã
+    const simTempInput = document.getElementById('sim-temp');
+    const simHumInput = document.getElementById('sim-hum');
+    const simLightInput = document.getElementById('sim-light');
+    const simDistInput = document.getElementById('sim-dist');
+    const simFlameInput = document.getElementById('sim-flame');
+
+    const valSimTemp = document.getElementById('val-sim-temp');
+    const valSimHum = document.getElementById('val-sim-hum');
+    const valSimLight = document.getElementById('val-sim-light');
+    const valSimDist = document.getElementById('val-sim-dist');
+
+    if (simTempInput && valSimTemp) {
+        simTempInput.addEventListener('input', (e) => {
+            valSimTemp.innerText = parseFloat(e.target.value).toFixed(1);
+        });
+    }
+    if (simHumInput && valSimHum) {
+        simHumInput.addEventListener('input', (e) => {
+            valSimHum.innerText = parseFloat(e.target.value).toFixed(0);
+        });
+    }
+    if (simLightInput && valSimLight) {
+        simLightInput.addEventListener('input', (e) => {
+            valSimLight.innerText = parseInt(e.target.value);
+        });
+    }
+    if (simDistInput && valSimDist) {
+        simDistInput.addEventListener('input', (e) => {
+            valSimDist.innerText = parseInt(e.target.value);
         });
     }
 
-    if (btnHistory) {
-        btnHistory.addEventListener('click', () => {
-            viewHistory.classList.remove('hidden');
-            viewDashboard.classList.add('hidden');
-            btnHistory.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-accent/20 text-accent rounded-xl font-medium transition-colors border border-accent/30 shadow-[0_0_15px_rgba(56,189,248,0.2)] text-sm sm:text-base";
-            btnDashboard.className = "flex-1 sm:flex-none px-4 sm:px-5 py-2.5 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 rounded-xl font-medium transition-colors border border-transparent text-sm sm:text-base";
-        });
+    // Função para obter o payload atual do simulador
+    function getSimulatorPayload() {
+        const deviceSelect = document.getElementById('sim-device-select');
+        const deviceId = deviceSelect ? deviceSelect.value : null;
+
+        if (!deviceId || deviceId.includes("A carregar") || deviceId.includes("Nenhum")) {
+            return null;
+        }
+
+        return {
+            device_id: deviceId,
+            temperature: parseFloat(simTempInput ? simTempInput.value : 22.0),
+            humidity: parseFloat(simHumInput ? simHumInput.value : 50.0),
+            light_level: parseFloat(simLightInput ? simLightInput.value : 500.0),
+            distance: parseFloat(simDistInput ? simDistInput.value : 150.0),
+            flame_detected: simFlameInput ? simFlameInput.checked : false
+        };
     }
+
+    // 2. Enviar leitura única do Simulador para o backend
+    async function sendSimulatedReading() {
+        const payload = getSimulatorPayload();
+        const statusEl = document.getElementById('sim-status');
+
+        if (!payload) {
+            if (statusEl) {
+                statusEl.innerText = "❌ Por favor, associe um dispositivo na sua conta antes de simular.";
+                statusEl.className = "text-xs mt-4 text-center text-red-400 animate-pulse";
+                statusEl.classList.remove('hidden');
+            }
+            return false;
+        }
+
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) {
+            if (statusEl) {
+                statusEl.innerText = "❌ Sessão expirada ou não autenticado.";
+                statusEl.className = "text-xs mt-4 text-center text-red-400 animate-pulse";
+                statusEl.classList.remove('hidden');
+            }
+            return false;
+        }
+
+        if (statusEl) {
+            statusEl.innerText = "A enviar leitura simulada...";
+            statusEl.className = "text-xs mt-4 text-center text-slate-400";
+            statusEl.classList.remove('hidden');
+        }
+
+        try {
+            const res = await fetch('/api/simulate-data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                const resData = await res.json();
+                if (statusEl) {
+                    if (resData.alert_triggered) {
+                        statusEl.innerHTML = `✅ Dados enviados! ⚠️ <strong class="text-orange-400">Alerta ativado na cloud:</strong> ${escapeHtml(resData.alert_message)}`;
+                        statusEl.className = "text-xs mt-4 text-center text-yellow-400";
+                    } else {
+                        statusEl.innerText = "✅ Leitura virtual enviada com sucesso! Sem alertas detetados.";
+                        statusEl.className = "text-xs mt-4 text-center text-green-400";
+                    }
+                }
+                // Forçar recarga imediata do painel e alertas para feedback visual rápido
+                pollDashboard();
+                return true;
+            } else {
+                const err = await res.json();
+                if (statusEl) {
+                    statusEl.innerText = `❌ Falha ao simular: ${err.detail || 'Erro desconhecido.'}`;
+                    statusEl.className = "text-xs mt-4 text-center text-red-400";
+                }
+                return false;
+            }
+        } catch (e) {
+            if (statusEl) {
+                statusEl.innerText = "❌ Erro de ligação ao servidor.";
+                statusEl.className = "text-xs mt-4 text-center text-red-400";
+            }
+            return false;
+        }
+    }
+
+    document.getElementById('btn-sim-send')?.addEventListener('click', sendSimulatedReading);
+
+    // 3. Lógica da Transmissão Automática (Loop com Random Walk)
+    const btnSimAuto = document.getElementById('btn-sim-auto');
+    const simAutoDot = document.getElementById('sim-auto-dot');
+    const btnSimAutoText = document.getElementById('btn-sim-auto-text');
+
+    function toggleAutoSimulation() {
+        if (simIntervalId) {
+            // Parar a simulação automática
+            clearInterval(simIntervalId);
+            simIntervalId = null;
+
+            if (btnSimAuto) {
+                btnSimAuto.className = "flex-1 bg-white/5 hover:bg-white/10 text-white font-semibold py-3 px-4 rounded-xl transition-all border border-white/10 flex items-center justify-center gap-2";
+            }
+            if (simAutoDot) {
+                simAutoDot.className = "w-2.5 h-2.5 rounded-full bg-slate-500 shrink-0";
+            }
+            if (btnSimAutoText) {
+                btnSimAutoText.innerText = "Iniciar Transmissão Automática";
+            }
+            const statusEl = document.getElementById('sim-status');
+            if (statusEl) {
+                statusEl.innerText = "Transmissão automática parada.";
+                statusEl.className = "text-xs mt-4 text-center text-slate-400";
+                setTimeout(() => statusEl.classList.add('hidden'), 2000);
+            }
+        } else {
+            // Verificar se temos um dispositivo selecionado primeiro
+            const payload = getSimulatorPayload();
+            if (!payload) {
+                const statusEl = document.getElementById('sim-status');
+                if (statusEl) {
+                    statusEl.innerText = "❌ Associe um dispositivo antes de iniciar a simulação.";
+                    statusEl.className = "text-xs mt-4 text-center text-red-400 animate-pulse";
+                    statusEl.classList.remove('hidden');
+                }
+                return;
+            }
+
+            // Iniciar a simulação automática
+            if (btnSimAuto) {
+                btnSimAuto.className = "flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-500 font-semibold py-3 px-4 rounded-xl transition-all border border-red-500/30 flex items-center justify-center gap-2 animate-pulse";
+            }
+            if (simAutoDot) {
+                simAutoDot.className = "w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 animate-ping";
+            }
+            if (btnSimAutoText) {
+                btnSimAutoText.innerText = "Parar Transmissão Automática";
+            }
+
+            // Enviar a primeira leitura imediatamente
+            sendSimulatedReading();
+
+            // Configurar loop
+            simIntervalId = setInterval(async () => {
+                // Aplicar ligeiras variações aleatórias nos controlos do ecrã (Random Walk)
+                if (simTempInput) {
+                    let curVal = parseFloat(simTempInput.value);
+                    let delta = (Math.random() - 0.5) * 0.8;
+                    let newVal = Math.max(-20, Math.min(70, curVal + delta));
+                    simTempInput.value = newVal;
+                    if (valSimTemp) valSimTemp.innerText = newVal.toFixed(1);
+                }
+
+                if (simHumInput) {
+                    let curVal = parseFloat(simHumInput.value);
+                    let delta = (Math.random() - 0.5) * 2;
+                    let newVal = Math.max(0, Math.min(100, curVal + delta));
+                    simHumInput.value = newVal;
+                    if (valSimHum) valSimHum.innerText = newVal.toFixed(0);
+                }
+
+                if (simLightInput) {
+                    let curVal = parseInt(simLightInput.value);
+                    let delta = Math.round((Math.random() - 0.5) * 40);
+                    let newVal = Math.max(0, Math.min(2000, curVal + delta));
+                    simLightInput.value = newVal;
+                    if (valSimLight) valSimLight.innerText = newVal;
+                }
+
+                // A distância tem uma pequena chance (10%) de cair repentinamente (movimento)
+                if (simDistInput) {
+                    let curVal = parseInt(simDistInput.value);
+                    let newVal;
+                    if (Math.random() < 0.1) {
+                        newVal = Math.round(Math.random() * 40 + 10); // Menos de 50cm
+                    } else {
+                        newVal = Math.round(Math.random() * 50 + 150); // Valor normal
+                    }
+                    simDistInput.value = newVal;
+                    if (valSimDist) valSimDist.innerText = newVal;
+                }
+
+                // Enviar os novos valores
+                await sendSimulatedReading();
+            }, 3000);
+        }
+    }
+
+    document.getElementById('btn-sim-auto')?.addEventListener('click', toggleAutoSimulation);
 
     // Lógica de Filtros
     const btnApplyFilters = document.getElementById('btn-apply-filters');

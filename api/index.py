@@ -145,21 +145,9 @@ def get_user_from_token(authorization: Optional[str]) -> Optional[dict]:
     except Exception:
         return None
 
-# Recebe dados dos sensores do ESP32, processa regras de alerta e armazena os dados na base de dados.
-@app.post("/api/data")
-def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
-    # Comparação em tempo constante para prevenir timing attacks
-    if not x_api_key or not hmac.compare_digest(x_api_key, API_SECRET_KEY):
-        raise HTTPException(status_code=401, detail="Acesso negado: Chave API invalida ou ausente")
-
-    # Verificar rate limit por dispositivo
-    if check_rate_limit(data.device_id):
-        raise HTTPException(status_code=429, detail="Demasiadas requisições. Tenta novamente mais tarde.")
-
+# Função auxiliar que processa regras de alerta e armazena os dados na base de dados local e Supabase.
+def process_and_store_sensor_data(data: SensorData, user_id: Optional[str]) -> dict:
     # Usar o timestamp NTP enviado pelo ESP32 se existir e for válido (formato ISO 8601).
-    # Isto é crucial para dados offline: o ESP32 guarda leituras no SD card com
-    # o timestamp real da medição. Sem isto, dados offline apareceriam todos
-    # com a hora do momento em que o WiFi reconectou.
     esp_timestamp = data.timestamp
     if esp_timestamp and not esp_timestamp.startswith("1970"):
         try:
@@ -183,8 +171,6 @@ def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
     data_dict.pop("timestamp", None)  # Remover o campo bruto do ESP32
     data_dict["timestamp"] = timestamp  # Inserir o timestamp validado
 
-    # Associar o user_id ao device_id (para isolação de dados por utilizador)
-    user_id = get_user_id_by_device(data.device_id)
     if user_id:
         data_dict["user_id"] = user_id
 
@@ -295,6 +281,41 @@ def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
                 print(f"Erro a inserir alerta no Supabase: {e}")
 
     return {"status": "success", "alert_triggered": alert_triggered, "alert_message": alert_message}
+
+
+# Recebe dados dos sensores do ESP32, processa regras de alerta e armazena os dados na base de dados.
+@app.post("/api/data")
+def receive_data(data: SensorData, x_api_key: Optional[str] = Header(None)):
+    # Comparação em tempo constante para prevenir timing attacks
+    if not x_api_key or not hmac.compare_digest(x_api_key, API_SECRET_KEY):
+        raise HTTPException(status_code=401, detail="Acesso negado: Chave API invalida ou ausente")
+
+    # Verificar rate limit por dispositivo
+    if check_rate_limit(data.device_id):
+        raise HTTPException(status_code=429, detail="Demasiadas requisições. Tenta novamente mais tarde.")
+
+    # Associar o user_id ao device_id (para isolação de dados por utilizador)
+    user_id = get_user_id_by_device(data.device_id)
+    return process_and_store_sensor_data(data, user_id)
+
+
+# Novo endpoint seguro para receber simulação do frontend usando token JWT do utilizador
+@app.post("/api/simulate-data")
+def simulate_data(data: SensorData, authorization: Optional[str] = Header(None)):
+    user = get_user_from_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Não autenticado")
+
+    # Verificar se o utilizador é proprietário deste dispositivo
+    user_id = get_user_id_by_device(data.device_id)
+    if not user_id:
+        raise HTTPException(status_code=403, detail="Este dispositivo não está registado. Registe-o primeiro na secção 'Dispositivo'.")
+    if user_id != str(user.id):
+        raise HTTPException(status_code=403, detail="Este dispositivo pertence a outro utilizador.")
+
+    # Processar e guardar as leituras sob o ID do utilizador autenticado
+    return process_and_store_sensor_data(data, user_id)
+
 
 
 # Associa um device_id ao utilizador autenticado.
