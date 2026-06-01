@@ -75,6 +75,9 @@ function showApp(user) {
 
     // Inicializar o dashboard após login confirmado
     initDashboard();
+
+    // Obter os dispositivos registados e inicializar os seletores de imediato
+    fetchMyDevices();
 }
 
 /** Trata o clique no botão de login com Google. */
@@ -224,6 +227,49 @@ document.getElementById('btn-google-login')?.addEventListener('click', loginWith
 document.getElementById('btn-logout')?.addEventListener('click', logout);
 
 // ============================================================
+// CONTROLO DE DISPOSITIVO ATIVO
+// ============================================================
+
+/**
+ * Obtém o ID do dispositivo ativo a partir do localStorage.
+ * @returns {string} O ID do dispositivo ativo ou string vazia.
+ */
+function getActiveDevice() {
+    const key = `activeDevice_${currentUser?.id || 'anon'}`;
+    return localStorage.getItem(key) || "";
+}
+
+/**
+ * Define o ID do dispositivo ativo no localStorage e sincroniza a UI.
+ * @param {string} deviceId O ID do dispositivo a ativar.
+ */
+function setActiveDevice(deviceId) {
+    const key = `activeDevice_${currentUser?.id || 'anon'}`;
+    if (deviceId) {
+        localStorage.setItem(key, deviceId);
+    } else {
+        localStorage.removeItem(key);
+    }
+    
+    // Atualizar dropdown global se existir
+    const globalSelect = document.getElementById('global-device-select');
+    if (globalSelect) {
+        globalSelect.value = deviceId;
+    }
+    
+    // Sincronizar o simulador se existir e o deviceId for válido
+    const simSelect = document.getElementById('sim-device-select');
+    if (simSelect && deviceId) {
+        simSelect.value = deviceId;
+    }
+
+    // Recarregar os dados do dashboard imediatamente para aplicar o filtro
+    if (typeof window.refreshDashboardData === 'function') {
+        window.refreshDashboardData();
+    }
+}
+
+// ============================================================
 // MODAL: REGISTO DE DISPOSITIVO
 // ============================================================
 
@@ -287,6 +333,8 @@ async function saveDeviceRegistration() {
                 statusEl.className = 'text-xs mb-4 text-green-400';
                 statusEl.classList.remove('hidden');
             }
+            // Definir o novo dispositivo como o ativo automaticamente
+            setActiveDevice(deviceId);
             // Atualizar lista de dispositivos imediatamente
             fetchMyDevices();
             // Limpar campo
@@ -316,16 +364,23 @@ async function saveDeviceRegistration() {
 document.getElementById('btn-register-device')?.addEventListener('click', openDeviceModal);
 document.getElementById('btn-close-device-modal')?.addEventListener('click', closeDeviceModal);
 document.getElementById('btn-save-device')?.addEventListener('click', saveDeviceRegistration);
+document.getElementById('global-device-select')?.addEventListener('change', (e) => {
+    setActiveDevice(e.target.value);
+});
 
-/** Obtém e desenha a lista de dispositivos no modal e no seletor de simulação. */
+/** Obtém e desenha a lista de dispositivos no modal, no dropdown global e no seletor de simulação. */
 async function fetchMyDevices() {
     const listEl = document.getElementById('my-devices-list');
     const simSelectEl = document.getElementById('sim-device-select');
+    const globalSelectEl = document.getElementById('global-device-select');
     if (!listEl) return;
     
     listEl.innerHTML = '<li class="text-slate-500 text-xs italic">A carregar...</li>';
     if (simSelectEl) {
         simSelectEl.innerHTML = '<option value="">A carregar dispositivos...</option>';
+    }
+    if (globalSelectEl) {
+        globalSelectEl.innerHTML = '<option value="" class="bg-darker text-slate-200">Todos os Dispositivos</option>';
     }
 
     const { data: { session } } = await supabaseClient.auth.getSession();
@@ -341,26 +396,81 @@ async function fetchMyDevices() {
         });
         if (res.ok) {
             const devices = await res.json();
+            const activeDevice = getActiveDevice();
+            
+            // Se o dispositivo ativo não for vazio mas não estiver na lista de dispositivos associados, 
+            // talvez tenha sido eliminado ou desassociado, limpamos
+            const deviceExists = devices.some(d => d.device_id === activeDevice);
+            if (activeDevice && !deviceExists) {
+                setActiveDevice("");
+            }
+
             if (devices.length === 0) {
                 listEl.innerHTML = '<li class="text-slate-500 text-xs italic">Não tens nenhum dispositivo associado.</li>';
                 if (simSelectEl) {
                     simSelectEl.innerHTML = '<option value="">Nenhum dispositivo registado</option>';
                 }
+                if (globalSelectEl) {
+                    globalSelectEl.innerHTML = '<option value="" class="bg-darker text-slate-200">Todos os Dispositivos</option>';
+                }
             } else {
-                // Usar escapeHtml para prevenir XSS via device_id
-                listEl.innerHTML = devices.map(d => `
-                    <li class="bg-white/5 border border-white/5 p-2 rounded-lg flex items-center gap-2">
-                        <div class="bg-accent/20 text-accent p-1.5 rounded-md">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+                // Renderizar a lista interativa no modal
+                listEl.innerHTML = devices.map(d => {
+                    const isSelected = d.device_id === activeDevice;
+                    const activeClass = isSelected 
+                        ? 'border-accent bg-accent/10 hover:bg-accent/15' 
+                        : 'border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/20';
+                    return `
+                    <li data-device-id="${escapeHtml(d.device_id)}" class="device-list-item cursor-pointer p-2.5 rounded-xl border flex items-center justify-between transition-all duration-200 ${activeClass}">
+                        <div class="flex items-center gap-3">
+                            <div class="bg-accent/20 text-accent p-2 rounded-lg shrink-0">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+                            </div>
+                            <div class="text-left">
+                                <span class="font-semibold text-slate-100 block">${escapeHtml(d.device_id)}</span>
+                                <span class="text-[11px] text-slate-400">Clique para selecionar</span>
+                            </div>
                         </div>
-                        <span class="font-medium text-slate-200">${escapeHtml(d.device_id)}</span>
+                        ${isSelected ? `
+                            <span class="text-xs bg-accent/20 text-accent px-2.5 py-1 rounded-full font-bold border border-accent/30">
+                                Ativo
+                            </span>
+                        ` : `
+                            <span class="text-xs bg-white/5 text-slate-400 px-2.5 py-1 rounded-full border border-transparent hover:border-slate-500 hover:text-slate-200 transition-colors">
+                                Selecionar
+                            </span>
+                        `}
                     </li>
-                `).join('');
+                    `;
+                }).join('');
 
+                // Adicionar event listeners aos itens da lista no modal
+                listEl.querySelectorAll('.device-list-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const deviceId = item.getAttribute('data-device-id');
+                        setActiveDevice(deviceId);
+                        fetchMyDevices(); // Re-desenhar lista para mostrar o novo ativo
+                        setTimeout(closeDeviceModal, 300); // Dar um feedback visual antes de fechar o modal
+                    });
+                });
+
+                // Popular o seletor do simulador
                 if (simSelectEl) {
                     simSelectEl.innerHTML = devices.map(d => `
-                        <option value="${escapeHtml(d.device_id)}">${escapeHtml(d.device_id)}</option>
+                        <option value="${escapeHtml(d.device_id)}" class="bg-darker text-slate-200">${escapeHtml(d.device_id)}</option>
                     `).join('');
+                    simSelectEl.value = activeDevice || devices[0].device_id;
+                }
+
+                // Popular o dropdown global de dispositivos
+                if (globalSelectEl) {
+                    globalSelectEl.innerHTML = `
+                        <option value="" class="bg-darker text-slate-200">Todos os Dispositivos</option>
+                        ${devices.map(d => `
+                            <option value="${escapeHtml(d.device_id)}" class="bg-darker text-slate-200">${escapeHtml(d.device_id)}</option>
+                        `).join('')}
+                    `;
+                    globalSelectEl.value = activeDevice;
                 }
             }
         } else {
@@ -587,11 +697,17 @@ function initDashboard() {
             if (!currentUser) return;
 
             // Usar Supabase JS diretamente — o RLS filtra automaticamente pelo user_id do utilizador atual
-            const { data, error } = await supabaseClient
+            let query = supabaseClient
                 .from('security_events')
                 .select('*')
-                .order('timestamp', { ascending: false })
-                .limit(100);
+                .order('timestamp', { ascending: false });
+
+            const activeDevice = getActiveDevice();
+            if (activeDevice) {
+                query = query.eq('device_id', activeDevice);
+            }
+
+            const { data, error } = await query.limit(100);
 
             if (error) {
                 // Detectar erro de autenticação específico (sessão expirada)
@@ -681,6 +797,40 @@ function initDashboard() {
                 if (typeof updateRecommendation === 'function') {
                     updateRecommendation();
                 }
+            } else {
+                // Sem dados para este dispositivo
+                document.getElementById('stat-temp').innerText = "--";
+                document.getElementById('stat-hum').innerText = "--";
+                document.getElementById('stat-dist').innerText = "--";
+
+                const statFlame = document.getElementById('stat-flame');
+                if (statFlame) {
+                    statFlame.innerText = "Sem dados";
+                    statFlame.className = "text-2xl font-bold text-slate-500";
+                }
+                const flameCard = document.getElementById('card-flame');
+                if (flameCard) flameCard.style.border = "1px solid rgba(255, 255, 255, 0.05)";
+                const flameIcon = document.getElementById('icon-flame');
+                if (flameIcon) flameIcon.className = "bg-slate-500/20 p-2 rounded-lg text-slate-500";
+
+                const distCard = document.getElementById('card-dist');
+                if (distCard) distCard.style.border = "1px solid rgba(255, 255, 255, 0.05)";
+                const distIcon = document.getElementById('icon-dist');
+                if (distIcon) distIcon.className = "bg-slate-500/20 p-2 rounded-lg text-slate-500";
+
+                allDataHistory = [];
+                renderHistoryTable();
+                lastDataCount = 0;
+                lastRefreshTime = null;
+
+                // Limpar recomendação
+                const recEl = document.getElementById('weather-recommendation');
+                if (recEl) {
+                    recEl.innerHTML = "✨ Sem dados recebidos deste dispositivo.";
+                    recEl.className = "text-slate-500 text-sm";
+                }
+                const elIn = document.getElementById('weather-in');
+                if (elIn) elIn.innerText = "--";
             }
         } catch (e) {
             console.error("Erro ao obter dados", e);
@@ -696,11 +846,17 @@ function initDashboard() {
             if (!currentUser) return;
 
             // Usar Supabase JS diretamente — o RLS filtra automaticamente pelo user_id do utilizador atual
-            const { data: alerts, error } = await supabaseClient
+            let query = supabaseClient
                 .from('security_alerts')
                 .select('*')
-                .order('timestamp', { ascending: false })
-                .limit(50);
+                .order('timestamp', { ascending: false });
+
+            const activeDevice = getActiveDevice();
+            if (activeDevice) {
+                query = query.eq('device_id', activeDevice);
+            }
+
+            const { data: alerts, error } = await query.limit(50);
 
             if (error) {
                 console.error('Erro Supabase (alerts):', error.message);
@@ -793,6 +949,9 @@ function initDashboard() {
             updateConnectionStatus(false);
         }
     }
+
+    // Expor a função de atualização globalmente para que possa ser acionada a partir de fora
+    window.refreshDashboardData = pollDashboard;
 
     // Primeira chamada imediata
     pollDashboard();

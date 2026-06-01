@@ -114,6 +114,16 @@
                 <!-- Separador (oculto em muito pequeno) -->
                 <div class="hidden sm:block w-px h-6 bg-white/10"></div>
 
+                <!-- Seletor Global de Dispositivo -->
+                <div id="global-device-container" class="flex items-center gap-1.5 bg-white/5 border border-white/10 hover:border-accent/30 rounded-xl px-2.5 py-1.5 text-xs text-slate-300 transition-all duration-200">
+                    <svg class="w-3.5 h-3.5 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+                    </svg>
+                    <select id="global-device-select" class="bg-transparent border-none text-slate-200 font-semibold focus:outline-none cursor-pointer pr-1">
+                        <option value="" class="bg-darker text-slate-200">Todos os Dispositivos</option>
+                    </select>
+                </div>
+
                 <!-- Perfil do utilizador -->
                 <div class="flex items-center gap-2 cursor-pointer group" id="user-profile-area">
                     <img id="user-avatar" src="" alt="Avatar" class="w-8 h-8 rounded-full ring-2 ring-accent/30 hidden object-cover">
