@@ -47,7 +47,7 @@ const int   pinoLDR         = 1;
 const float voltagemPlaca   = 3.3;
 const float resistenciaFixa = 10000.0;
 
-// --- Configurações do DHT22 ---
+// --- Configurações do DHT22 ----
 #define pinoDHT 4
 DHT dht(pinoDHT, DHT22);
 
